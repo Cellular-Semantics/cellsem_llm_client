@@ -1,0 +1,95 @@
+name: Test Suite
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
+      with:
+        version: "latest"
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: uv sync --dev
+
+    - name: Run unit tests
+      run: uv run pytest -m unit --cov=cellsem_llm_client --cov-report=xml
+
+    - name: Run code quality checks
+      run: |
+        uv run ruff check src/ tests/
+        uv run ruff format --check src/ tests/
+        uv run mypy src/
+
+    - name: Generate coverage badge
+      if: matrix.python-version == '3.12' && github.ref == 'refs/heads/main'
+      run: |
+        # Extract coverage percentage from coverage report
+        COVERAGE=$(uv run coverage report | grep TOTAL | awk '{print $4}' | sed 's/%//')
+        echo "Coverage: $COVERAGE%"
+
+        # Determine badge color based on coverage percentage
+        if [ "$COVERAGE" -ge 80 ]; then
+          COLOR="green"
+        elif [ "$COVERAGE" -ge 60 ]; then
+          COLOR="yellow"
+        else
+          COLOR="red"
+        fi
+
+        # Create coverage badge JSON for shields.io
+        mkdir -p .github/badges
+        echo "{\"schemaVersion\": 1, \"label\": \"coverage\", \"message\": \"$COVERAGE%\", \"color\": \"$COLOR\"}" > .github/badges/coverage.json
+
+    - name: Commit coverage badge
+      if: matrix.python-version == '3.12' && github.ref == 'refs/heads/main'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add .github/badges/coverage.json
+        git diff --staged --quiet || git commit -m "Update coverage badge [skip ci]"
+        git push
+
+  integration-test:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install dependencies
+      run: uv sync --dev
+
+    - name: Run integration tests with mocks
+      env:
+        USE_MOCKS: "true"
+        CI: "true"
+      run: |
+        echo "Running integration tests in CI mode with mocks..."
+        echo "USE_MOCKS=$USE_MOCKS"
+        echo "CI=$CI"
+        uv run pytest -m integration -v
