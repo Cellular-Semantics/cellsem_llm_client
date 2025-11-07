@@ -6,6 +6,10 @@ on:
   push:
     branches: [ main ]
 
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -38,34 +42,13 @@ jobs:
         uv run ruff format --check src/ tests/
         uv run mypy src/
 
-    - name: Generate coverage badge
-      if: matrix.python-version == '3.12' && github.ref == 'refs/heads/main'
-      run: |
-        # Extract coverage percentage from coverage report
-        COVERAGE=$(uv run coverage report | grep TOTAL | awk '{print $4}' | sed 's/%//')
-        echo "Coverage: $COVERAGE%"
-
-        # Determine badge color based on coverage percentage
-        if [ "$COVERAGE" -ge 80 ]; then
-          COLOR="green"
-        elif [ "$COVERAGE" -ge 60 ]; then
-          COLOR="yellow"
-        else
-          COLOR="red"
-        fi
-
-        # Create coverage badge JSON for shields.io
-        mkdir -p .github/badges
-        echo "{\"schemaVersion\": 1, \"label\": \"coverage\", \"message\": \"$COVERAGE%\", \"color\": \"$COLOR\"}" > .github/badges/coverage.json
-
-    - name: Commit coverage badge
-      if: matrix.python-version == '3.12' && github.ref == 'refs/heads/main'
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add .github/badges/coverage.json
-        git diff --staged --quiet || git commit -m "Update coverage badge [skip ci]"
-        git push
+    - name: Upload coverage reports
+      if: matrix.python-version == '3.12'
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
+        verbose: true
 
   integration-test:
     runs-on: ubuntu-latest
