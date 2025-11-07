@@ -108,4 +108,4 @@ A Dockerfile is planned for Phase 3. For now, use the Python installation method
 
 - Check the [GitHub Issues](https://github.com/Cellular-Semantics/cellsem_llm_client/issues)
 - Read the [Contributing Guide](contributing.md)
-- Review the [API Documentation](api/index.md)
+- Review the {doc}`api/cellsem_llm_client/index`

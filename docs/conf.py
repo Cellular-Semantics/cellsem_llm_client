@@ -22,6 +22,7 @@ extensions = [
     "sphinx.ext.napoleon",  # Google/NumPy docstring style
     "sphinx.ext.viewcode",  # Source code links
     "sphinx_autodoc_typehints",  # Type hints in docs
+    "sphinx_design",  # Web components (grids, tabs, cards)
 ]
 
 templates_path = ["_templates"]
@@ -41,7 +42,7 @@ myst_enable_extensions = [
 autoapi_type = "python"
 autoapi_dirs = ["../src/cellsem_llm_client"]
 autoapi_root = "api"
-autoapi_add_toctree_entry = False  # We'll add it manually in index.md
+autoapi_add_toctree_entry = True  # Let AutoAPI add itself to the toctree
 autoapi_template_dir = "_templates/autoapi"
 autoapi_python_class_content = "both"  # Include both class and __init__ docstrings
 autoapi_member_order = "groupwise"

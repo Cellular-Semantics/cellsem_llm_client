@@ -200,7 +200,7 @@ analysis = agent.query(
 
 ## Next Steps
 
-- Explore the {doc}`api/index` for detailed API documentation
+- Explore the {doc}`api/cellsem_llm_client/index` for detailed API documentation
 - Check out {doc}`contributing` for development guidelines
 - See [ROADMAP.md](https://github.com/Cellular-Semantics/cellsem_llm_client/blob/main/ROADMAP.md) for upcoming features:
   - Token tracking and cost monitoring

@@ -6,7 +6,6 @@
 
 installation
 quickstart
-api/index
 contributing
 ```
 
@@ -48,7 +47,7 @@ Automatic API key loading and configuration from environment variables
 
 - {doc}`installation` - Get started with installation and setup
 - {doc}`quickstart` - Basic usage examples and workflows
-- {doc}`api/index` - Complete API reference documentation
+- {doc}`api/cellsem_llm_client/index` - Complete API reference documentation
 - {doc}`contributing` - Development guidelines and TDD workflow
 
 ## Current Status
