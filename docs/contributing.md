@@ -275,7 +275,7 @@ git commit --no-verify -m "message"
 
 When adding new features (especially Phase 3 features):
 
-1. **Follow the roadmap** in `ROADMAP.md`
+1. **Follow the roadmap** in [planning/ROADMAP.md](https://github.com/Cellular-Semantics/cellsem_llm_client/blob/main/planning/ROADMAP.md)
 2. **Create feature branch** for each major component
 3. **Write tests first** that demonstrate the feature
 4. **Implement minimally** to pass tests

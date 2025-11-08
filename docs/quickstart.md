@@ -151,6 +151,36 @@ except Exception as e:
 - Consider caching responses for repeated queries
 :::
 
+### Cost Tracking
+
+Track token usage and costs for better budget management:
+
+```python
+from cellsem_llm_client.agents.agent_connection import OpenAIAgent
+from cellsem_llm_client.tracking.cost_calculator import FallbackCostCalculator
+
+# Set up cost calculation
+calculator = FallbackCostCalculator()
+calculator.load_default_rates()
+
+agent = OpenAIAgent(model="gpt-3.5-turbo", api_key="your_key")
+
+# Query with cost tracking
+response, usage = agent.query_with_tracking(
+    "Explain machine learning briefly",
+    cost_calculator=calculator
+)
+
+print(f"Input tokens: {usage.input_tokens}")
+print(f"Output tokens: {usage.output_tokens}")
+print(f"Estimated cost: ${usage.estimated_cost_usd:.6f}")
+print(f"Provider: {usage.provider}")
+```
+
+:::{warning}
+**API Key Sharing**: The `ApiCostTracker` returns aggregate usage for the entire API key, including other applications. For precise per-request tracking, rely on the estimated costs from `query_with_tracking()` instead.
+:::
+
 ### Testing and Development
 
 ```python
@@ -202,7 +232,7 @@ analysis = agent.query(
 
 - Explore the {doc}`api/cellsem_llm_client/index` for detailed API documentation
 - Check out {doc}`contributing` for development guidelines
-- See [ROADMAP.md](https://github.com/Cellular-Semantics/cellsem_llm_client/blob/main/ROADMAP.md) for upcoming features:
+- See [ROADMAP.md](https://github.com/Cellular-Semantics/cellsem_llm_client/blob/main/planning/ROADMAP.md) for upcoming features:
   - Token tracking and cost monitoring
   - JSON schema validation
   - File attachment support

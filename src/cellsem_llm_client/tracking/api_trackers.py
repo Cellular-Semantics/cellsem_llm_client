@@ -98,6 +98,19 @@ class ApiCostTracker:
     Fetches actual usage data from provider APIs for accurate cost monitoring.
     Both providers offer real-time usage APIs with ~5 minute data availability.
 
+    .. warning::
+        **Shared API Key Limitation**: This tracker returns aggregate usage for the
+        entire API key across the specified time range. It **cannot** distinguish
+        between usage from this client versus other applications, scripts, or manual
+        API calls using the same key. For precise per-request tracking, use the
+        estimated cost calculation via ``query_with_tracking()`` instead.
+
+        **Best Practices**:
+        - Use dedicated test API keys for validation
+        - Focus on patterns (e.g., +10 requests) rather than absolute totals
+        - Run tests during quiet periods when no other scripts are active
+        - Consider estimated costs for precise per-request attribution
+
     Attributes:
         openai_api_key: OpenAI API key for usage tracking
         anthropic_api_key: Anthropic API key for usage tracking
@@ -114,7 +127,7 @@ class ApiCostTracker:
                 anthropic_api_key="sk-ant-..."
             )
 
-            # Get recent usage (last 24 hours)
+            # Get recent usage (last 24 hours) - includes ALL key activity!
             recent_usage = tracker.get_recent_usage("openai", hours=24)
             print(f"Total tokens: {recent_usage.total_tokens}")
             print(f"Total requests: {recent_usage.total_requests}")

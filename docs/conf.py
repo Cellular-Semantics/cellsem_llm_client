@@ -30,11 +30,16 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 # -- MyST configuration -----------------------------------------------------
 
+# File suffix mapping for MyST
+source_suffix = [".rst", ".md"]
+
 myst_enable_extensions = [
     "colon_fence",  # ::: syntax for directives
     "deflist",  # Definition lists
     "tasklist",  # Task lists (- [ ] and - [x])
     "attrs_inline",  # Inline attributes {.class #id key=value}
+    "dollarmath",  # $math$ and $$math$$ syntax
+    "amsmath",  # Advanced math environments
 ]
 
 # -- AutoAPI configuration --------------------------------------------------

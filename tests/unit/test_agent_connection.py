@@ -1,7 +1,7 @@
 """Unit tests for agent connection classes."""
 
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -12,6 +12,7 @@ from cellsem_llm_client.agents.agent_connection import (
     LiteLLMAgent,
     OpenAIAgent,
 )
+from cellsem_llm_client.tracking.usage_metrics import UsageMetrics
 
 
 class TestAgentConnection:
@@ -27,6 +28,16 @@ class TestAgentConnection:
 
         class IncompleteAgent(AgentConnection):
             pass
+
+        with pytest.raises(TypeError):
+            IncompleteAgent()  # type: ignore[abstract]
+
+    def test_agent_connection_requires_query_with_tracking_implementation(self) -> None:
+        """Test that subclasses must implement query_with_tracking method."""
+
+        class IncompleteAgent(AgentConnection):
+            def query(self, message: str, system_message: str | None = None) -> str:
+                return "test"
 
         with pytest.raises(TypeError):
             IncompleteAgent()  # type: ignore[abstract]
@@ -114,6 +125,187 @@ class TestLiteLLMAgent:
         agent = LiteLLMAgent(model="gpt-3.5-turbo", api_key="test-key")
         with pytest.raises(Exception, match="API Error"):
             agent.query("Hello world")
+
+    @pytest.mark.unit
+    @patch("cellsem_llm_client.agents.agent_connection.completion")
+    def test_litellm_agent_query_with_tracking_openai(
+        self, mock_completion: Any
+    ) -> None:
+        """Test query_with_tracking with OpenAI model returns usage metrics."""
+        # Mock LiteLLM response with usage data
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Test response"
+        mock_response.usage = Mock()
+        mock_response.usage.prompt_tokens = 100
+        mock_response.usage.completion_tokens = 50
+        mock_response.usage.total_tokens = 150
+        # Ensure no cached tokens details
+        mock_response.usage.prompt_tokens_details = None
+        mock_completion.return_value = mock_response
+
+        agent = LiteLLMAgent(model="gpt-4", api_key="test-key")
+        response, usage = agent.query_with_tracking("Hello world")
+
+        assert response == "Test response"
+        assert isinstance(usage, UsageMetrics)
+        assert usage.input_tokens == 100
+        assert usage.output_tokens == 50
+        assert usage.provider == "openai"
+        assert usage.model == "gpt-4"
+        assert usage.cost_source == "estimated"
+        assert usage.cached_tokens is None
+        assert usage.thinking_tokens is None
+
+    @pytest.mark.unit
+    @patch("cellsem_llm_client.agents.agent_connection.completion")
+    def test_litellm_agent_query_with_tracking_anthropic(
+        self, mock_completion: Any
+    ) -> None:
+        """Test query_with_tracking with Anthropic model handles thinking tokens."""
+        # Mock LiteLLM response with Anthropic usage data including thinking tokens
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Test response"
+        mock_response.usage = Mock()
+        mock_response.usage.prompt_tokens = 200
+        mock_response.usage.completion_tokens = 75
+        mock_response.usage.total_tokens = 325
+        # Ensure no cached tokens details (Anthropic doesn't use this)
+        mock_response.usage.prompt_tokens_details = None
+        mock_completion.return_value = mock_response
+
+        agent = LiteLLMAgent(model="claude-3-sonnet-20240229", api_key="test-key")
+        response, usage = agent.query_with_tracking("Hello world")
+
+        assert response == "Test response"
+        assert isinstance(usage, UsageMetrics)
+        assert usage.input_tokens == 200
+        assert usage.output_tokens == 75
+        assert usage.provider == "anthropic"
+        assert usage.model == "claude-3-sonnet-20240229"
+        assert usage.cost_source == "estimated"
+
+    @pytest.mark.unit
+    @patch("cellsem_llm_client.agents.agent_connection.completion")
+    def test_litellm_agent_query_with_tracking_with_cached_tokens(
+        self, mock_completion: Any
+    ) -> None:
+        """Test query_with_tracking handles OpenAI cached tokens."""
+        # Mock LiteLLM response with OpenAI cached tokens
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Test response"
+        mock_response.usage = Mock()
+        mock_response.usage.prompt_tokens = 100
+        mock_response.usage.completion_tokens = 50
+        mock_response.usage.total_tokens = 150
+        # OpenAI cache tokens
+        mock_response.usage.prompt_tokens_details = Mock()
+        mock_response.usage.prompt_tokens_details.cached_tokens = 30
+        mock_completion.return_value = mock_response
+
+        agent = LiteLLMAgent(model="gpt-4", api_key="test-key")
+        response, usage = agent.query_with_tracking("Hello world")
+
+        assert response == "Test response"
+        assert isinstance(usage, UsageMetrics)
+        assert usage.input_tokens == 100
+        assert usage.output_tokens == 50
+        assert usage.cached_tokens == 30
+        assert usage.provider == "openai"
+        assert usage.model == "gpt-4"
+
+    @pytest.mark.unit
+    @patch("cellsem_llm_client.agents.agent_connection.completion")
+    def test_litellm_agent_query_with_tracking_with_cost_calculator(
+        self, mock_completion: Any
+    ) -> None:
+        """Test query_with_tracking with cost calculator integration."""
+        # Mock LiteLLM response
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Test response"
+        mock_response.usage = Mock()
+        mock_response.usage.prompt_tokens = 1000
+        mock_response.usage.completion_tokens = 500
+        mock_response.usage.total_tokens = 1500
+        # Ensure no cached tokens details
+        mock_response.usage.prompt_tokens_details = None
+        mock_completion.return_value = mock_response
+
+        # Mock cost calculator
+        mock_calculator = Mock()
+        mock_calculator.calculate_cost.return_value = 0.06
+
+        agent = LiteLLMAgent(model="gpt-4", api_key="test-key")
+        response, usage = agent.query_with_tracking(
+            "Hello world", cost_calculator=mock_calculator
+        )
+
+        assert response == "Test response"
+        assert isinstance(usage, UsageMetrics)
+        assert usage.input_tokens == 1000
+        assert usage.output_tokens == 500
+        assert usage.estimated_cost_usd == 0.06
+        assert usage.cost_source == "estimated"
+
+        # Verify cost calculator was called
+        mock_calculator.calculate_cost.assert_called_once()
+        call_args = mock_calculator.calculate_cost.call_args[0][0]
+        assert isinstance(call_args, UsageMetrics)
+        assert call_args.input_tokens == 1000
+        assert call_args.output_tokens == 500
+
+    @pytest.mark.unit
+    @patch("cellsem_llm_client.agents.agent_connection.completion")
+    def test_litellm_agent_query_with_tracking_system_message(
+        self, mock_completion: Any
+    ) -> None:
+        """Test query_with_tracking with system message."""
+        # Mock LiteLLM response
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Test response"
+        mock_response.usage = Mock()
+        mock_response.usage.prompt_tokens = 120
+        mock_response.usage.completion_tokens = 60
+        mock_response.usage.total_tokens = 180
+        # Ensure no cached tokens details
+        mock_response.usage.prompt_tokens_details = None
+        mock_completion.return_value = mock_response
+
+        agent = LiteLLMAgent(model="gpt-3.5-turbo", api_key="test-key")
+        response, usage = agent.query_with_tracking(
+            "Hello", system_message="You are a helpful assistant"
+        )
+
+        assert response == "Test response"
+        assert isinstance(usage, UsageMetrics)
+        assert usage.input_tokens == 120
+        assert usage.output_tokens == 60
+
+        # Verify correct messages were sent
+        mock_completion.assert_called_once_with(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant"},
+                {"role": "user", "content": "Hello"},
+            ],
+            max_tokens=1000,
+        )
+
+    @pytest.mark.unit
+    @patch("cellsem_llm_client.agents.agent_connection.completion")
+    def test_litellm_agent_query_with_tracking_error_handling(
+        self, mock_completion: Any
+    ) -> None:
+        """Test query_with_tracking error handling."""
+        mock_completion.side_effect = Exception("API Error")
+
+        agent = LiteLLMAgent(model="gpt-3.5-turbo", api_key="test-key")
+        with pytest.raises(Exception, match="API Error"):
+            agent.query_with_tracking("Hello world")
 
 
 class TestOpenAIAgent:

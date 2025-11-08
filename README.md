@@ -76,6 +76,18 @@ uv run mypy src/                      # Type checking
 uv run pytest --cov=cellsem_llm_client --cov-report=html
 ```
 
+## 📚 Documentation
+
+**Full Documentation**: [https://cellular-semantics.github.io/cellsem_llm_client/](https://cellular-semantics.github.io/cellsem_llm_client/)
+
+The documentation is built automatically from the `docs/` folder on each push to main using GitHub Actions.
+
+Quick links:
+- [Installation Guide](docs/installation.md)
+- [Quick Start Tutorial](docs/quickstart.md)
+- [Development Guidelines](docs/contributing.md)
+- [API Reference](docs/api/cellsem_llm_client/index.rst) (auto-generated)
+
 ## ✨ Current Features (Phase 2 - Complete)
 
 - ✅ **Multi-Provider Support**: Seamless switching between OpenAI, Anthropic, and other LiteLLM-supported providers
@@ -90,9 +102,9 @@ uv run pytest --cov=cellsem_llm_client --cov-report=html
 ## 🔮 Planned Features (Phase 3 - In Development)
 
 ### 🔥 Priority 1: Token Tracking & Cost Monitoring
-- ⏳ **Real-time Cost Tracking**: Direct integration with OpenAI and Anthropic usage APIs
+- ⏳ **Real-time Cost Tracking**: Direct integration with OpenAI and Anthropic usage APIs (aggregate per-key)
 - ⏳ **Token Usage Metrics**: Detailed tracking of input, output, cached, and thinking tokens
-- ⏳ **Cost Calculation**: Automated cost computation with fallback rate database
+- ⏳ **Cost Calculation**: Automated cost computation with fallback rate database (per-request precision)
 - ⏳ **Usage Analytics**: Comprehensive reporting and cost optimization insights
 
 ### 🔥 Priority 2: JSON Schema Compliance
@@ -146,7 +158,7 @@ cellsem_llm_client/
 4. Maintain >85% test coverage
 5. Use conventional commit messages
 
-See `ROADMAP.md` for detailed Phase 3 implementation plans.
+See [`planning/ROADMAP.md`](planning/ROADMAP.md) for detailed Phase 3 implementation plans.
 
 ## 📄 License
 
