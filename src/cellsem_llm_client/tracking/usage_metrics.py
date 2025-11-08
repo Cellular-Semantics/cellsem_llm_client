@@ -12,7 +12,7 @@ class UsageMetrics(BaseModel):
     Supports all major token types across providers:
     - Standard input/output tokens (all providers)
     - Cached tokens (OpenAI cache hits)
-    - Thinking tokens (Anthropic Claude 4.1+ series)
+    - Thinking tokens (Anthropic Claude 3.7+ series)
 
     Provides both actual API-reported costs and estimated fallback costs
     with source attribution for transparency.
@@ -21,7 +21,7 @@ class UsageMetrics(BaseModel):
         input_tokens: Number of input tokens consumed
         output_tokens: Number of output tokens generated
         cached_tokens: Number of cached tokens (OpenAI feature)
-        thinking_tokens: Number of thinking tokens (Anthropic Claude 4.1+)
+        thinking_tokens: Number of thinking tokens (Anthropic Claude 3.7+)
         actual_cost_usd: Actual cost from provider API in USD
         estimated_cost_usd: Estimated cost from rate calculation in USD
         cost_source: Whether cost comes from API or estimation
@@ -58,7 +58,7 @@ class UsageMetrics(BaseModel):
     thinking_tokens: int | None = Field(
         default=None,
         ge=0,
-        description="Number of thinking tokens (Anthropic Claude 4.1+)",
+        description="Number of thinking tokens (Anthropic Claude 3.7+)",
     )
     actual_cost_usd: float | None = Field(
         default=None, ge=0, description="Actual cost from provider API in USD"
