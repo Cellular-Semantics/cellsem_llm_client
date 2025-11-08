@@ -197,9 +197,10 @@ class TestErrorHandling:
             "unauthorized",
             "sorry",
         ]
-        assert any(
+        error_found = any(
             indicator in response.lower() for indicator in error_indicators
-        ), f"Expected error message in response, got: {response[:100]}"
+        )
+        assert error_found, f"Expected error message in response, got: {response[:100]}"
 
     @pytest.mark.integration
     def test_invalid_model_handling(
