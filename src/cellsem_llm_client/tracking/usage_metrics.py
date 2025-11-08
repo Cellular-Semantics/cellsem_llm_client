@@ -30,24 +30,24 @@ class UsageMetrics(BaseModel):
         timestamp: When this usage occurred
 
     Example:
-        ```python
-        from datetime import datetime
-        from cellsem_llm_client.tracking.usage_metrics import UsageMetrics
+        .. code-block:: python
 
-        # Basic usage tracking
-        metrics = UsageMetrics(
-            input_tokens=100,
-            output_tokens=50,
-            provider="openai",
-            model="gpt-4",
-            timestamp=datetime.now(),
-            cost_source="api",
-            actual_cost_usd=0.003
-        )
+            from datetime import datetime
+            from cellsem_llm_client.tracking.usage_metrics import UsageMetrics
 
-        print(f"Total tokens: {metrics.total_tokens}")
-        print(f"Cost: ${metrics.cost}")
-        ```
+            # Basic usage tracking
+            metrics = UsageMetrics(
+                input_tokens=100,
+                output_tokens=50,
+                provider="openai",
+                model="gpt-4",
+                timestamp=datetime.now(),
+                cost_source="api",
+                actual_cost_usd=0.003
+            )
+
+            print(f"Total tokens: {metrics.total_tokens}")
+            print(f"Cost: ${metrics.cost}")
     """
 
     input_tokens: int = Field(ge=0, description="Number of input tokens consumed")

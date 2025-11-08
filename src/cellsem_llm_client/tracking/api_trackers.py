@@ -103,26 +103,26 @@ class ApiCostTracker:
         anthropic_api_key: Anthropic API key for usage tracking
 
     Example:
-        ```python
-        from datetime import datetime, timedelta
-        from cellsem_llm_client.tracking.api_trackers import ApiCostTracker
+        .. code-block:: python
 
-        # Initialize with API keys
-        tracker = ApiCostTracker(
-            openai_api_key="sk-...",
-            anthropic_api_key="sk-ant-..."
-        )
+            from datetime import datetime, timedelta
+            from cellsem_llm_client.tracking.api_trackers import ApiCostTracker
 
-        # Get recent usage (last 24 hours)
-        recent_usage = tracker.get_recent_usage("openai", hours=24)
-        print(f"Total tokens: {recent_usage.total_tokens}")
-        print(f"Total requests: {recent_usage.total_requests}")
+            # Initialize with API keys
+            tracker = ApiCostTracker(
+                openai_api_key="sk-...",
+                anthropic_api_key="sk-ant-..."
+            )
 
-        # Get usage for specific date range
-        start = datetime(2024, 1, 1)
-        end = datetime(2024, 1, 2)
-        usage = tracker.get_openai_usage(start, end)
-        ```
+            # Get recent usage (last 24 hours)
+            recent_usage = tracker.get_recent_usage("openai", hours=24)
+            print(f"Total tokens: {recent_usage.total_tokens}")
+            print(f"Total requests: {recent_usage.total_requests}")
+
+            # Get usage for specific date range
+            start = datetime(2024, 1, 1)
+            end = datetime(2024, 1, 2)
+            usage = tracker.get_openai_usage(start, end)
     """
 
     def __init__(

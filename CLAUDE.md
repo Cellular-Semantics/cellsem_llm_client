@@ -23,6 +23,10 @@ uv run ruff format src/ tests/        # Format code
 uv run ruff check --fix src/ tests/   # Lint and auto-fix
 uv run mypy src/                      # Type checking
 
+# Documentation (run before committing!)
+python scripts/check-docs.py         # Build docs and check for errors
+cd docs && uv run sphinx-build . _build/html -W  # Alternative direct command
+
 # Pre-commit hooks (recommended)
 uv run pre-commit install       # Install git hooks
 uv run pre-commit run --all-files   # Run on all files
@@ -82,9 +86,11 @@ uv sync --dev               # Sync with development dependencies
 
 ## Documentation Requirements
 - Google-style docstrings for all public functions/classes
-- Auto-generated API docs via Sphinx
+- **RST syntax in docstrings**: Use `.. code-block:: python` instead of markdown ```python
+- Auto-generated API docs via Sphinx + AutoAPI
 - Manual docs in docs/ using MyST markdown
-- Build docs: `sphinx-build docs docs/_build`
+- Build docs: `python scripts/check-docs.py` (recommended) or `sphinx-build docs docs/_build`
+- **Always run docs check before committing** to catch RST syntax errors
 
 ## MVP Definition
 For each feature:

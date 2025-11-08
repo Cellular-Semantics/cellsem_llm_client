@@ -44,9 +44,38 @@ autoapi_dirs = ["../src/cellsem_llm_client"]
 autoapi_root = "api"
 autoapi_add_toctree_entry = True  # Let AutoAPI add itself to the toctree
 autoapi_template_dir = "_templates/autoapi"
-autoapi_python_class_content = "both"  # Include both class and __init__ docstrings
+autoapi_python_class_content = "class"  # Only include class docstring, not __init__
 autoapi_member_order = "groupwise"
 autoapi_generate_api_docs = True
+autoapi_options = [
+    "members",
+    "show-inheritance",
+    "show-module-summary",
+]
+# Reduce duplication in generated docs
+autoapi_keep_files = False
+# Skip documenting Pydantic model fields to reduce duplicates
+autoapi_ignore = [
+    "*/migrations/*",
+    "*/__pycache__/*",
+]
+
+
+def autoapi_skip_member(app, what, name, obj, skip, options):  # type: ignore[no-untyped-def]
+    """Custom AutoAPI skip function to reduce Pydantic field duplication."""
+    # Skip private members and pydantic internals
+    if name.startswith("_"):
+        return True
+    # Skip Pydantic model fields that cause duplication
+    if what == "attribute" and hasattr(obj, "__annotations__"):
+        return True
+    return skip
+
+
+def setup(app):  # type: ignore[no-untyped-def]
+    """Sphinx setup function."""
+    app.connect("autoapi-skip-member", autoapi_skip_member)
+
 
 # -- HTML output configuration ----------------------------------------------
 
