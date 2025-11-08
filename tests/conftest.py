@@ -71,6 +71,8 @@ def mock_litellm_completion(monkeypatch: Any) -> Any:
             mock_response.usage.prompt_tokens = 10
             mock_response.usage.completion_tokens = 15
             mock_response.usage.total_tokens = 25
+            # Ensure prompt_tokens_details is None to avoid mock attribute errors
+            mock_response.usage.prompt_tokens_details = None
 
             return mock_response
 
