@@ -60,4 +60,4 @@ Automatic API key loading and configuration from environment variables
 - File attachment support
 - AI-powered model recommendations
 
-See our [GitHub repository](https://github.com/Cellular-Semantics/cellsem_llm_client) for the latest updates and [ROADMAP.md](https://github.com/Cellular-Semantics/cellsem_llm_client/blob/main/ROADMAP.md) for detailed implementation plans.
+See our [GitHub repository](https://github.com/Cellular-Semantics/cellsem_llm_client) for the latest updates and [ROADMAP.md](https://github.com/Cellular-Semantics/cellsem_llm_client/blob/main/planning/ROADMAP.md) for detailed implementation plans.
