@@ -59,22 +59,7 @@ custom_agent = create_openai_agent(
 )
 ```
 
-### Development Workflow
 
-```bash
-# Run tests
-uv run pytest                    # All tests
-uv run pytest -m unit           # Unit tests only
-uv run pytest -m integration    # Integration tests only
-
-# Code quality checks
-uv run ruff check --fix src/ tests/   # Lint and auto-fix
-uv run ruff format src/ tests/        # Format code
-uv run mypy src/                      # Type checking
-
-# Run with coverage
-uv run pytest --cov=cellsem_llm_client --cov-report=html
-```
 
 ## 📚 Documentation
 
@@ -88,32 +73,40 @@ Quick links:
 - [Development Guidelines](docs/contributing.md)
 - [API Reference](docs/api/cellsem_llm_client/index.rst) (auto-generated)
 
-## ✨ Current Features (Phase 2 - Complete)
+## ✨ Current Features
+
+### LLM client
+
+STATUS - beta
 
 - ✅ **Multi-Provider Support**: Seamless switching between OpenAI, Anthropic, and other LiteLLM-supported providers
 - ✅ **Environment-Based Configuration**: Automatic API key loading from environment variables
 - ✅ **Type Safety**: Full MyPy type checking with strict configuration
-- ✅ **Comprehensive Testing**: Dual testing strategy (real APIs for local dev, mocks for CI)
 - ✅ **Abstract Base Classes**: Clean architecture with provider-specific implementations
 - ✅ **Error Handling**: Robust validation and error management
 - ✅ **Configuration Utilities**: Helper functions for quick agent setup
-- ✅ **Security**: No API key exposure in logs or test output
 
-## 🔮 Planned Features (Phase 3 - In Development)
+###  Token Tracking & Cost Monitoring
 
-### 🔥 Priority 1: Token Tracking & Cost Monitoring
-- ⏳ **Real-time Cost Tracking**: Direct integration with OpenAI and Anthropic usage APIs (aggregate per-key)
-- ⏳ **Token Usage Metrics**: Detailed tracking of input, output, cached, and thinking tokens
-- ⏳ **Cost Calculation**: Automated cost computation with fallback rate database (per-request precision)
-- ⏳ **Usage Analytics**: Comprehensive reporting and cost optimization insights
+STATUS - beta
 
-### 🔥 Priority 2: JSON Schema Compliance
-- ⏳ **Native Schema Support**: OpenAI structured outputs with `strict=true` enforcement
-- ⏳ **Tool Use Integration**: Anthropic schema validation via tool use patterns
-- ⏳ **Pydantic Integration**: Automatic model validation and retry logic
-- ⏳ **Cross-Provider Compatibility**: Unified schema interface across all providers
+- ✅ **Real-time Cost Tracking**: Direct integration with OpenAI and Anthropic usage APIs (aggregate per-key)
+- ✅ **Token Usage Metrics**: Detailed tracking of input, output, cached, and thinking tokens
+- ✅ **Cost Calculation**: Automated cost computation with fallback rate database (per-request precision)
+- ✅ **Usage Analytics**: Comprehensive reporting and cost optimization insights
 
-### 🔥 Priority 3: File Attachment Support
+### JSON Schema Compliance
+
+STATUS - alpha
+
+- ✅ **Native Schema Support**: OpenAI structured outputs with `strict=true` enforcement
+- ✅ **Tool Use Integration**: Anthropic schema validation via tool use patterns
+- ✅ **Pydantic Integration**: Automatic model validation and retry logic
+- ✅ **Cross-Provider Compatibility**: Unified schema interface across all providers
+
+## Planned/Under developemnt
+
+###  File Attachment Support
 - ⏳ **Multi-Format Support**: Images (PNG, JPEG, WebP), PDFs, and documents
 - ⏳ **Provider Abstraction**: Unified file API across different LLM providers
 - ⏳ **Capability Detection**: Automatic model file support validation
@@ -131,18 +124,11 @@ Quick links:
 cellsem_llm_client/
 ├── agents/          # Core LLM agent implementations
 ├── utils/           # Configuration and helper utilities
-├── tracking/        # Token usage and cost monitoring (Phase 3)
-├── schema/          # JSON schema validation and compliance (Phase 3)
-├── files/           # File attachment processing (Phase 3)
-└── advisors/        # AI-powered model recommendations (Phase 3)
+├── tracking/        # Token usage and cost monitoring 
+├── schema/          # JSON schema validation and compliance 
+├── files/           # File attachment processing (Stub)
+└── advisors/        # AI-powered model recommendations (Stub)
 ```
-
-## 🧪 Testing Strategy
-
-- **Unit Tests**: Fast, isolated tests with mocked dependencies
-- **Integration Tests**: Real API validation in development, controlled mocks in CI
-- **Environment-Based**: `USE_MOCKS=true` for CI, real APIs for local development
-- **Coverage**: >90% code coverage maintained across all modules
 
 ## 📋 Requirements
 
@@ -158,7 +144,31 @@ cellsem_llm_client/
 4. Maintain >85% test coverage
 5. Use conventional commit messages
 
-See [`planning/ROADMAP.md`](planning/ROADMAP.md) for detailed Phase 3 implementation plans.
+See [`planning/ROADMAP.md`](planning/ROADMAP.md) for detailed implementation plans for pending features.
+
+### 🧪 Testing Strategy
+
+- **Unit Tests**: Fast, isolated tests with mocked dependencies
+- **Integration Tests**: Real API validation in development, controlled mocks in CI
+- **Environment-Based**: `USE_MOCKS=true` for CI, real APIs for local development
+- **Coverage**: >90% code coverage maintained across all modules
+
+### Development Workflow
+
+```bash
+# Run tests
+uv run pytest                    # All tests
+uv run pytest -m unit           # Unit tests only
+uv run pytest -m integration    # Integration tests only
+
+# Code quality checks
+uv run ruff check --fix src/ tests/   # Lint and auto-fix
+uv run ruff format src/ tests/        # Format code
+uv run mypy src/                      # Type checking
+
+# Run with coverage
+uv run pytest --cov=cellsem_llm_client --cov-report=html
+```
 
 ## 📄 License
 
