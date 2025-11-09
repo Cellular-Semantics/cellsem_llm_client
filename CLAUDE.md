@@ -67,22 +67,23 @@ uv sync --dev               # Sync with development dependencies
 - All tests must use pytest markers (@pytest.mark.unit or @pytest.mark.integration)
 
 ## Integration Testing Strategy
-**Local Development (Real APIs):**
+**Local Development (Real APIs Only):**
 - Integration tests REQUIRE real API keys (OPENAI_API_KEY, ANTHROPIC_API_KEY)
 - Tests FAIL HARD if no API keys are present
 - Forces developers to test against real APIs before pushing
+- Pre-commit hooks enforce integration test passage
 - Command: `uv run pytest -m integration`
 
-**CI/GitHub Actions (Controlled Mocks):**
-- Integration tests use realistic mocks (USE_MOCKS=true)
-- No API secrets required in CI
-- Mocks simulate real API responses and behaviors
-- Command: `USE_MOCKS=true uv run pytest -m integration`
+**CI/GitHub Actions (Unit Tests Only):**
+- NO integration tests run in CI to avoid mock complexity
+- Only unit tests run (fast, no external dependencies)
+- Command: `uv run pytest -m unit`
 
 **Rationale:**
-- Local: High confidence through real API testing
-- CI: Reliable, fast tests without external dependencies
-- Honors "real integration" mandate for development workflow
+- Local: Mandatory real API testing ensures integration quality
+- CI: Simple, fast, reliable unit test validation
+- Avoids complex mock maintenance and false confidence
+- Forces developers to have working API access
 
 ## Documentation Requirements
 - Google-style docstrings for all public functions/classes

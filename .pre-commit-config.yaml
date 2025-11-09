@@ -12,3 +12,12 @@ repos:
       - id: mypy
         additional_dependencies: [types-requests]
         args: [--ignore-missing-imports]
+
+  - repo: local
+    hooks:
+      - id: integration-tests
+        name: Integration tests (real APIs)
+        entry: uv run pytest -m integration --tb=short
+        language: system
+        pass_filenames: false
+        always_run: true
