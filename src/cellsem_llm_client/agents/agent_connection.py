@@ -313,6 +313,7 @@ class LiteLLMAgent(AgentConnection):
                 f"Schema validation failed after {max_retries} retries: {validation_result.error}"
             )
 
+        assert validation_result.model_instance is not None
         return validation_result.model_instance
 
     def query_with_schema_and_tracking(
@@ -434,10 +435,10 @@ class LiteLLMAgent(AgentConnection):
             response_content = json.dumps(response)
         elif adapter.supports_native_schema():
             # For other native schema adapters (OpenAI), get content from message
-            response_content = str(response.choices[0].message.content)
+            response_content = str(response.choices[0].message.content)  # type: ignore
         else:
             # For fallback adapters, content is in message
-            response_content = str(response.choices[0].message.content)
+            response_content = str(response.choices[0].message.content)  # type: ignore
 
         # Validate response against schema with retry logic
         validation_result = self._schema_validator.validate_with_retry(
@@ -451,6 +452,7 @@ class LiteLLMAgent(AgentConnection):
                 f"Schema validation failed after {max_retries} retries: {validation_result.error}"
             )
 
+        assert validation_result.model_instance is not None
         return validation_result.model_instance, usage_metrics
 
     def _pydantic_model_to_schema(self, model_class: type[BaseModel]) -> dict[str, Any]:

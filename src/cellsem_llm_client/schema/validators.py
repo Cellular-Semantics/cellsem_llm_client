@@ -146,9 +146,10 @@ class SchemaValidator:
 
             # Try to fix the error for next attempt
             try:
-                current_text = self._apply_retry_strategy(
-                    result.error, current_text, attempt + 1
-                )
+                if result.error:
+                    current_text = self._apply_retry_strategy(
+                        result.error, current_text, attempt + 1
+                    )
             except Exception:
                 # If retry strategy fails, return the original error
                 result.retry_count = attempt + 1
@@ -261,7 +262,9 @@ class SchemaValidator:
             if error_detail.get("type") == "missing":
                 # Add missing field with a default value
                 missing_field = (
-                    error_detail["loc"][0] if error_detail["loc"] else "missing_field"
+                    str(error_detail["loc"][0])
+                    if error_detail["loc"]
+                    else "missing_field"
                 )
                 if missing_field not in data:
                     # Add with a reasonable default

@@ -41,8 +41,8 @@ class TestSchemaValidator:
 
         assert isinstance(result, SchemaValidationResult)
         assert result.success is True
-        assert result.model_instance.name == "John"
-        assert result.model_instance.age == 30
+        assert result.model_instance.name == "John"  # type: ignore
+        assert result.model_instance.age == 30  # type: ignore
         assert result.error is None
         assert result.retry_count == 0
 
@@ -98,6 +98,7 @@ class TestSchemaValidator:
             )
 
             assert result.success is True
+            assert result.model_instance is not None
             assert result.model_instance.age == 25
             assert result.retry_count == 1
 
@@ -134,7 +135,7 @@ class TestSchemaValidator:
         from pydantic import ValidationError
 
         try:
-            SampleModel(name="John", age=30)  # Missing email
+            SampleModel(name="John", age=30)  # type: ignore  # Missing email intentionally
         except ValidationError as e:
             result = validator._apply_retry_strategy(
                 e,
@@ -169,6 +170,7 @@ class TestSchemaValidator:
         )
 
         assert result.success is True
+        assert result.model_instance is not None
         assert result.model_instance.email == "default@example.com"
 
     def test_validation_performance_tracking(self) -> None:
@@ -208,6 +210,7 @@ class TestSchemaValidator:
         result = validator.validate_response(json.dumps(complex_response), ComplexModel)
 
         assert result.success is True
+        assert result.model_instance is not None
         assert result.model_instance.user.name == "John"
         assert result.model_instance.address.city == "Anytown"
         assert "important" in result.model_instance.tags
@@ -263,6 +266,7 @@ class TestSchemaValidator:
             '{"required_field": "test", "optional_field": "optional"}', OptionalModel
         )
         assert result1.success is True
+        assert result1.model_instance is not None
         assert result1.model_instance.optional_field == "optional"
 
         # Test with optional field missing
@@ -270,4 +274,5 @@ class TestSchemaValidator:
             '{"required_field": "test"}', OptionalModel
         )
         assert result2.success is True
+        assert result2.model_instance is not None
         assert result2.model_instance.optional_field is None

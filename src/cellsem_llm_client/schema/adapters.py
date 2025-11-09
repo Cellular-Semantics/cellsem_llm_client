@@ -27,7 +27,7 @@ class BaseSchemaAdapter(ABC):
         messages: list[dict[str, Any]],
         schema_dict: dict[str, Any],
         model: str,
-        **kwargs,
+        **kwargs: Any,
     ) -> Any:
         """Apply schema to LLM request.
 
@@ -72,7 +72,7 @@ class OpenAISchemaAdapter(BaseSchemaAdapter):
         messages: list[dict[str, Any]],
         schema_dict: dict[str, Any],
         model: str,
-        **kwargs,
+        **kwargs: Any,
     ) -> Any:
         """Apply schema using OpenAI's structured output format.
 
@@ -146,7 +146,7 @@ class AnthropicSchemaAdapter(BaseSchemaAdapter):
         messages: list[dict[str, Any]],
         schema_dict: dict[str, Any],
         model: str,
-        **kwargs,
+        **kwargs: Any,
     ) -> Any:
         """Apply schema using Anthropic's tool choice pattern.
 
@@ -241,7 +241,7 @@ class FallbackSchemaAdapter(BaseSchemaAdapter):
         messages: list[dict[str, Any]],
         schema_dict: dict[str, Any],
         model: str,
-        **kwargs,
+        **kwargs: Any,
     ) -> Any:
         """Apply schema by enhancing prompt and relying on post-processing.
 

@@ -237,8 +237,8 @@ class SchemaManager:
         properties = schema_dict.get("properties", {})
         required_fields = schema_dict.get("required", [])
 
-        # Build field definitions
-        field_definitions = {}
+        # Build field definitions for create_model
+        field_definitions: dict[str, Any] = {}
 
         for field_name, field_schema in properties.items():
             field_type = self._json_type_to_python_type(field_schema)
@@ -249,9 +249,9 @@ class SchemaManager:
                 field_definitions[field_name] = (field_type, None)
 
         # Create the model
-        return create_model(model_name, **field_definitions)
+        return create_model(model_name, **field_definitions)  # type: ignore[misc]
 
-    def _json_type_to_python_type(self, field_schema: dict[str, Any]) -> type:
+    def _json_type_to_python_type(self, field_schema: dict[str, Any]) -> type[Any]:
         """Convert JSON schema type to Python type.
 
         Args:
@@ -276,6 +276,6 @@ class SchemaManager:
 
         # Handle optional fields by making them unions with None
         if not field_schema.get("required", True):
-            python_type = python_type | None
+            return python_type | type(None)  # type: ignore[return-value]
 
         return python_type
