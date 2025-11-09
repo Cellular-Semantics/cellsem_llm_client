@@ -1,10 +1,46 @@
-"""Schema definitions for structured LLM responses and configurations."""
+"""Schema management system for structured LLM responses with JSON Schema compliance.
 
-# Enhanced schema module for Phase 3
-# Placeholder for schema classes
-# from .validators import SchemaValidator
-# from .adapters import ProviderSchemaAdapter
-# from .response_schemas import BaseResponse, StructuredResponse
-# from .config_schemas import LLMConfig, ModelConfig
+This module provides comprehensive schema management capabilities including:
+- JSON Schema loading from files and URLs
+- Automatic Pydantic model generation from JSON schemas
+- Provider-specific schema adapters for native schema enforcement
+- Validation with intelligent retry logic
+- Multi-source schema resolution with caching
+"""
 
-__all__: list[str] = []
+from .adapters import (
+    AdapterCapability,
+    AnthropicSchemaAdapter,
+    BaseSchemaAdapter,
+    FallbackSchemaAdapter,
+    OpenAISchemaAdapter,
+    SchemaAdapterFactory,
+)
+from .manager import (
+    SchemaManager,
+    SchemaNotFoundError,
+    SchemaValidationError,
+)
+from .validators import (
+    SchemaValidationResult,
+    SchemaValidator,
+    ValidationStrategy,
+)
+
+__all__ = [
+    # Adapters
+    "AdapterCapability",
+    "BaseSchemaAdapter",
+    "OpenAISchemaAdapter",
+    "AnthropicSchemaAdapter",
+    "FallbackSchemaAdapter",
+    "SchemaAdapterFactory",
+    # Manager
+    "SchemaManager",
+    "SchemaNotFoundError",
+    "SchemaValidationError",
+    # Validators
+    "SchemaValidator",
+    "SchemaValidationResult",
+    "ValidationStrategy",
+]
