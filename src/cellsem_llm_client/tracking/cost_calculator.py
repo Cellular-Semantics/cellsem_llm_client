@@ -4,13 +4,11 @@ from datetime import datetime, timedelta
 
 from pydantic import BaseModel, Field, field_validator
 
+from cellsem_llm_client.exceptions import CostCalculationException
 from cellsem_llm_client.tracking.usage_metrics import UsageMetrics
 
-
-class CostCalculationError(Exception):
-    """Exception raised when cost calculation fails."""
-
-    pass
+# Keep old exception name for backward compatibility
+CostCalculationError = CostCalculationException
 
 
 class RateSource(BaseModel):
@@ -205,8 +203,11 @@ class FallbackCostCalculator:
         """
         rate_data = self.get_model_rates(usage.provider, usage.model)
         if not rate_data:
-            raise CostCalculationError(
-                f"No rate data found for {usage.provider}/{usage.model}"
+            raise CostCalculationException(
+                f"No rate data found for {usage.provider}/{usage.model}",
+                provider=usage.provider,
+                model=usage.model,
+                usage_metrics=usage.model_dump(),
             )
 
         # Calculate base cost (input + output tokens)

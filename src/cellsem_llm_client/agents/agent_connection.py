@@ -1,6 +1,7 @@
 """Agent connection classes for LLM interactions."""
 
 import json
+import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
@@ -8,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from litellm import completion
 from pydantic import BaseModel
 
+from cellsem_llm_client.exceptions import SchemaValidationException
 from cellsem_llm_client.schema import (
     SchemaAdapterFactory,
     SchemaManager,
@@ -223,9 +225,12 @@ class LiteLLMAgent(AgentConnection):
                     cost_source="estimated",
                 )
                 estimated_cost_usd = cost_calculator.calculate_cost(temp_usage_metrics)
-            except Exception:
-                # If cost calculation fails, continue without cost estimation
-                pass
+            except Exception as e:
+                # Log cost calculation failure but continue without cost estimation
+                logging.warning(
+                    f"Cost calculation failed for {provider}/{self.model}: {e}"
+                )
+                estimated_cost_usd = None
 
         # Create final usage metrics with cost
         usage_metrics = UsageMetrics(
@@ -262,59 +267,17 @@ class LiteLLMAgent(AgentConnection):
             Validated Pydantic model instance matching the schema
 
         Raises:
-            Exception: If schema validation fails after max retries
+            SchemaValidationException: If schema validation fails after max retries
         """
-        # Get Pydantic model from schema input
-        pydantic_model = self._schema_manager.get_pydantic_model(schema)
-
-        # Convert Pydantic model to JSON schema for adapter
-        schema_dict = self._pydantic_model_to_schema(pydantic_model)
-
-        # Get appropriate adapter for this provider/model
-        provider = self._get_provider_from_model(self.model)
-        adapter = self._adapter_factory.get_adapter(provider, self.model)
-
-        # Prepare messages
-        messages = []
-        if system_message:
-            messages.append({"role": "system", "content": system_message})
-        messages.append({"role": "user", "content": message})
-
-        # Apply schema enforcement using adapter
-        response = adapter.apply_schema(
-            messages=messages,
-            schema_dict=schema_dict,
-            model=self.model,
-            max_tokens=self.max_tokens,
-        )
-
-        # Extract response content based on adapter type
-        from cellsem_llm_client.schema.adapters import AnthropicSchemaAdapter
-
-        if isinstance(adapter, AnthropicSchemaAdapter):
-            # Anthropic adapter returns dict directly from _extract_tool_response
-            response_content = json.dumps(response)
-        elif adapter.supports_native_schema():
-            # For other native schema adapters (OpenAI), get content from message
-            response_content = str(response.choices[0].message.content)
-        else:
-            # For fallback adapters, content is in message
-            response_content = str(response.choices[0].message.content)
-
-        # Validate response against schema with retry logic
-        validation_result = self._schema_validator.validate_with_retry(
-            response_text=response_content,
-            target_model=pydantic_model,
+        # Call the tracking version and discard usage metrics
+        result, _ = self.query_with_schema_and_tracking(
+            message=message,
+            schema=schema,
+            system_message=system_message,
+            cost_calculator=None,
             max_retries=max_retries,
         )
-
-        if not validation_result.success:
-            raise Exception(
-                f"Schema validation failed after {max_retries} retries: {validation_result.error}"
-            )
-
-        assert validation_result.model_instance is not None
-        return validation_result.model_instance
+        return result
 
     def query_with_schema_and_tracking(
         self,
@@ -337,7 +300,7 @@ class LiteLLMAgent(AgentConnection):
             Tuple of (validated_model_instance, usage_metrics)
 
         Raises:
-            Exception: If schema validation fails after max retries
+            SchemaValidationException: If schema validation fails after max retries
         """
         # Get Pydantic model from schema input
         pydantic_model = self._schema_manager.get_pydantic_model(schema)
@@ -416,8 +379,12 @@ class LiteLLMAgent(AgentConnection):
                     cost_source="estimated",
                 )
                 estimated_cost_usd = cost_calculator.calculate_cost(temp_usage_metrics)
-            except Exception:
-                pass
+            except Exception as e:
+                # Log cost calculation failure but continue without cost estimation
+                logging.warning(
+                    f"Cost calculation failed for {provider}/{self.model}: {e}"
+                )
+                estimated_cost_usd = None
 
         # Create usage metrics
         usage_metrics = UsageMetrics(
@@ -451,8 +418,13 @@ class LiteLLMAgent(AgentConnection):
         )
 
         if not validation_result.success:
-            raise Exception(
-                f"Schema validation failed after {max_retries} retries: {validation_result.error}"
+            raise SchemaValidationException(
+                f"Schema validation failed after {max_retries} retries: {validation_result.error}",
+                schema=str(schema),
+                response_text=response_content,
+                validation_errors=[str(validation_result.error)]
+                if validation_result.error
+                else [],
             )
 
         assert validation_result.model_instance is not None
@@ -574,28 +546,6 @@ class LiteLLMAgent(AgentConnection):
                         for item in value:
                             if isinstance(item, dict):
                                 self._ensure_no_additional_properties(item)
-
-    def _extract_response_content(self, response: Any, adapter: Any) -> str:
-        """Extract response content based on adapter type.
-
-        Args:
-            response: LLM response object
-            adapter: Schema adapter used
-
-        Returns:
-            Response content as string
-        """
-        import json
-
-        from cellsem_llm_client.schema.adapters import AnthropicSchemaAdapter
-
-        # For Anthropic adapter, extract from tool call and convert back to JSON string
-        if isinstance(adapter, AnthropicSchemaAdapter):
-            tool_response = adapter._extract_tool_response(response)
-            return json.dumps(tool_response)
-
-        # For OpenAI and others, use standard message content
-        return str(response.choices[0].message.content)
 
     def _get_provider_from_model(self, model: str) -> str:
         """Determine provider from model name.
