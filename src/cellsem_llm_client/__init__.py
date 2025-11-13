@@ -5,6 +5,15 @@ __version__ = "0.1.0"
 # Core agent classes
 from .agents import AgentConnection, AnthropicAgent, LiteLLMAgent, OpenAIAgent
 
+# Custom exceptions
+from .exceptions import (
+    CellSemLLMException,
+    ConfigurationException,
+    CostCalculationException,
+    ProviderException,
+    SchemaValidationException,
+)
+
 # Configuration utilities
 from .utils import (
     create_anthropic_agent,
@@ -27,4 +36,10 @@ __all__ = [
     "create_litellm_agent",
     "get_available_providers",
     "get_default_models",
+    # Exceptions
+    "CellSemLLMException",
+    "ConfigurationException",
+    "CostCalculationException",
+    "ProviderException",
+    "SchemaValidationException",
 ]

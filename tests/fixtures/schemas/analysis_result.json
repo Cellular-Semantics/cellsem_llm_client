@@ -1,0 +1,65 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string",
+      "minLength": 10,
+      "description": "Brief summary of the analysis"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": ["positive", "negative", "neutral", "warning"]
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "severity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": ["category", "description", "severity"],
+        "additionalProperties": false
+      },
+      "minItems": 1
+    },
+    "recommendations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 5
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "analysis_type": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "confidence_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "required": ["summary", "findings"],
+  "additionalProperties": false
+}
