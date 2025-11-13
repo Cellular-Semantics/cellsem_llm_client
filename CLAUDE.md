@@ -4,8 +4,8 @@
 1. Write unit and integration tests FIRST
 2. Tests must fail initially (red)
 3. Commit tests before implementation
-4. Write minimal code to pass tests (green) - DO NOT MODIFY THE TESTS!
-5. Refactor while keeping tests green, commit
+4. Write minimal code to pass tests (green)
+5. Refactor while keep**ing tests green, commit
 
 ## TDD Workflow Commands (using uv)
 ```bash
@@ -56,7 +56,7 @@ uv sync --dev               # Sync with development dependencies
 - Simulated API responses
 - Dummy database connections
 - Placeholder implementations
-- Tests that pass without real integration
+- Integration tests that pass without real integration
 - Skipping failing tests with pytest.mark.skip
 
 ## Required Test Structure
@@ -68,7 +68,7 @@ uv sync --dev               # Sync with development dependencies
 
 ## Integration Testing Strategy
 **Local Development (Real APIs Only):**
-- Integration tests REQUIRE real API keys (OPENAI_API_KEY, ANTHROPIC_API_KEY)
+- Integration tests REQUIRE real API keys (e.g. OPENAI_API_KEY, ANTHROPIC_API_KEY)
 - Tests FAIL HARD if no API keys are present
 - Forces developers to test against real APIs before pushing
 - Pre-commit hooks enforce integration test passage

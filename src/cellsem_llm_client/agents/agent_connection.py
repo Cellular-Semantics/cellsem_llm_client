@@ -364,7 +364,10 @@ class LiteLLMAgent(AgentConnection):
                 model=self.model,
                 messages=messages,
                 tools=[adapter._create_tool_definition(schema_dict)],
-                tool_choice={"type": "tool", "name": "structured_response"},
+                tool_choice={
+                    "type": "function",
+                    "function": {"name": "structured_response"},
+                },
                 max_tokens=self.max_tokens,
             )
 
