@@ -1,6 +1,7 @@
 """Unit tests for UsageMetrics data class."""
 
 from datetime import datetime
+from typing import Literal
 
 import pytest
 from pydantic import ValidationError
@@ -105,7 +106,11 @@ class TestUsageMetrics:
         timestamp = datetime.now()
 
         # Valid cost sources should work
-        for source in ["api", "estimated"]:
+        valid_sources: tuple[Literal["api"], Literal["estimated"]] = (
+            "api",
+            "estimated",
+        )
+        for source in valid_sources:
             metrics = UsageMetrics(
                 input_tokens=100,
                 output_tokens=50,

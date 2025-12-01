@@ -3,6 +3,7 @@
 import json
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -158,6 +159,106 @@ class LiteLLMAgent(AgentConnection):
         )
 
         return str(response.choices[0].message.content)
+
+    def query_with_tools(
+        self,
+        message: str,
+        tools: list[dict[str, Any]],
+        tool_handlers: dict[str, Callable[[dict[str, Any]], str | None]] | None = None,
+        system_message: str | None = None,
+        max_turns: int = 5,
+    ) -> str:
+        """Send a query to the LLM with tool-calling support.
+
+        Args:
+            message: The user message to send.
+            tools: Tool definitions to forward to LiteLLM.
+            tool_handlers: Mapping of tool names to callables that execute the tool.
+            system_message: Optional system message to set context.
+            max_turns: Maximum number of tool-call iterations before giving up.
+
+        Returns:
+            The assistant's final message content after executing tools.
+
+        Raises:
+            ValueError: If a tool call is returned without a matching handler or
+                tool arguments cannot be parsed.
+            RuntimeError: If the conversation does not terminate within
+                ``max_turns`` iterations.
+        """
+        messages: list[dict[str, Any]] = []
+
+        if system_message:
+            messages.append({"role": "system", "content": system_message})
+
+        messages.append({"role": "user", "content": message})
+
+        for _turn in range(max_turns):
+            response = completion(
+                model=self.model,
+                messages=[*messages],
+                tools=tools,
+                max_tokens=self.max_tokens,
+            )
+
+            response_message = response.choices[0].message
+            tool_calls = getattr(response_message, "tool_calls", None)
+
+            if tool_calls:
+                handler_map: dict[str, Callable[[dict[str, Any]], str | None]] = (
+                    tool_handlers or {}
+                )
+
+                assistant_message: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": response_message.content,
+                    "tool_calls": [],
+                }
+                messages.append(assistant_message)
+
+                for tool_call in tool_calls:
+                    function_call = getattr(tool_call, "function", None)
+                    tool_name = getattr(function_call, "name", None)
+                    tool_arguments = getattr(function_call, "arguments", {})
+
+                    assistant_message["tool_calls"].append(
+                        {
+                            "id": getattr(tool_call, "id", ""),
+                            "type": getattr(tool_call, "type", "function"),
+                            "function": {
+                                "name": tool_name,
+                                "arguments": tool_arguments,
+                            },
+                        }
+                    )
+
+                    if not tool_name or tool_name not in handler_map:
+                        raise ValueError(f"No handler found for tool '{tool_name}'.")
+
+                    try:
+                        parsed_args = (
+                            json.loads(tool_arguments)
+                            if isinstance(tool_arguments, str)
+                            else tool_arguments
+                        )
+                    except Exception as exc:
+                        raise ValueError(
+                            f"Failed to parse arguments for tool '{tool_name}'."
+                        ) from exc
+
+                    tool_result = handler_map[tool_name](parsed_args)
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": getattr(tool_call, "id", tool_name),
+                            "content": tool_result if tool_result is not None else "",
+                        }
+                    )
+                continue
+
+            return str(response_message.content)
+
+        raise RuntimeError("Max tool-call turns reached without a final response.")
 
     def query_with_tracking(
         self,
