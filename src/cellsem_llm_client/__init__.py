@@ -14,6 +14,9 @@ from .exceptions import (
     SchemaValidationException,
 )
 
+# Tool helpers
+from .tools import build_ols4_search_tool
+
 # Configuration utilities
 from .utils import (
     create_anthropic_agent,
@@ -30,6 +33,7 @@ __all__ = [
     "LiteLLMAgent",
     "OpenAIAgent",
     "AnthropicAgent",
+    "build_ols4_search_tool",
     "load_environment",
     "create_openai_agent",
     "create_anthropic_agent",
