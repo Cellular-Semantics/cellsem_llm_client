@@ -97,12 +97,21 @@ STATUS - beta
 
 ### JSON Schema Compliance
 
-STATUS - alpha
+STATUS - beta
 
 - ✅ **Native Schema Support**: OpenAI structured outputs with `strict=true` enforcement
 - ✅ **Tool Use Integration**: Anthropic schema validation via tool use patterns
 - ✅ **Pydantic Integration**: Automatic model validation and retry logic
 - ✅ **Cross-Provider Compatibility**: Unified schema interface across all providers
+
+### Tool Calling & Ontology Search
+
+STATUS - alpha
+
+- ✅ **LiteLLM Tool Loop**: `LiteLLMAgent.query_with_tools` executes tool calls and resumes the conversation
+- ✅ **OLS4 MCP Tool**: Built-in `ols4_search` helper targeting the EBI OLS4 MCP (with legacy fallback) for ontology lookups
+- ✅ **Integration Coverage**: Live test hits OLS4 for “Bergmann glial cell” to verify real responses
+- ✅ **Composable**: Tool definitions + handlers returned together for easy plug-in to agents
 
 ## Planned/Under developemnt
 
