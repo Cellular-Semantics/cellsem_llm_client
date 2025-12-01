@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "properties": {
+    "task": {
+      "type": "string",
+      "description": "The task that was completed"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Confidence level from 0 to 1"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["completed", "failed", "partial"],
+      "description": "Status of the task"
+    }
+  },
+  "required": ["task", "confidence"],
+  "additionalProperties": false
+}
