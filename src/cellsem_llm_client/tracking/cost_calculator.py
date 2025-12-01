@@ -4,13 +4,11 @@ from datetime import datetime, timedelta
 
 from pydantic import BaseModel, Field, field_validator
 
+from cellsem_llm_client.exceptions import CostCalculationException
 from cellsem_llm_client.tracking.usage_metrics import UsageMetrics
 
-
-class CostCalculationError(Exception):
-    """Exception raised when cost calculation fails."""
-
-    pass
+# Keep old exception name for backward compatibility
+CostCalculationError = CostCalculationException
 
 
 class RateSource(BaseModel):
@@ -144,6 +142,17 @@ class FallbackCostCalculator:
         )
         self._rate_database[("openai", "gpt-3.5-turbo")] = gpt35_rate
 
+        # OpenAI GPT-4o-mini pricing (current as of 2024)
+        gpt4o_mini_rate = ModelCostData(
+            provider="openai",
+            model="gpt-4o-mini",
+            input_cost_per_1k_tokens=0.00015,
+            output_cost_per_1k_tokens=0.0006,
+            cached_cost_per_1k_tokens=0.000075,  # 50% discount for cached tokens
+            source=default_source,
+        )
+        self._rate_database[("openai", "gpt-4o-mini")] = gpt4o_mini_rate
+
         # Anthropic Claude 3 Sonnet pricing
         claude_sonnet_rate = ModelCostData(
             provider="anthropic",
@@ -154,6 +163,19 @@ class FallbackCostCalculator:
             source=default_source,
         )
         self._rate_database[("anthropic", "claude-3-sonnet")] = claude_sonnet_rate
+
+        # Anthropic Claude 3 Haiku pricing (current as of 2024)
+        claude_haiku_rate = ModelCostData(
+            provider="anthropic",
+            model="claude-3-haiku-20240307",
+            input_cost_per_1k_tokens=0.00025,
+            output_cost_per_1k_tokens=0.00125,
+            thinking_cost_per_1k_tokens=0.0005,
+            source=default_source,
+        )
+        self._rate_database[("anthropic", "claude-3-haiku-20240307")] = (
+            claude_haiku_rate
+        )
 
     def get_model_rates(self, provider: str, model: str) -> ModelCostData | None:
         """Get rate data for a specific provider and model.
@@ -181,8 +203,11 @@ class FallbackCostCalculator:
         """
         rate_data = self.get_model_rates(usage.provider, usage.model)
         if not rate_data:
-            raise CostCalculationError(
-                f"No rate data found for {usage.provider}/{usage.model}"
+            raise CostCalculationException(
+                f"No rate data found for {usage.provider}/{usage.model}",
+                provider=usage.provider,
+                model=usage.model,
+                usage_metrics=usage.model_dump(),
             )
 
         # Calculate base cost (input + output tokens)
