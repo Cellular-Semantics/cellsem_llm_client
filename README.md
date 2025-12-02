@@ -72,6 +72,7 @@ Quick links:
 - [Quick Start Tutorial](docs/quickstart.md)
 - [Development Guidelines](docs/contributing.md)
 - [API Reference](docs/api/cellsem_llm_client/index.rst) (auto-generated)
+- [Schema Enforcement](docs/schema_enforcement.md)
 
 ## ✨ Current Features
 
@@ -103,6 +104,7 @@ STATUS - beta
 - ✅ **Tool Use Integration**: Anthropic schema validation via tool use patterns
 - ✅ **Pydantic Integration**: Automatic model validation and retry logic
 - ✅ **Cross-Provider Compatibility**: Unified schema interface across all providers
+- ✅ **JSON-First Inputs**: Prefer plain JSON Schema dicts; Pydantic models are optional helpers
 
 ### Tool Calling & Ontology Search
 
@@ -112,6 +114,36 @@ STATUS - alpha
 - ✅ **OLS4 MCP Tool**: Built-in `ols4_search` helper targeting the EBI OLS4 MCP (with legacy fallback) for ontology lookups
 - ✅ **Integration Coverage**: Live test hits OLS4 for “Bergmann glial cell” to verify real responses
 - ✅ **Composable**: Tool definitions + handlers returned together for easy plug-in to agents
+
+### Schema Enforcement (JSON-first)
+
+STATUS - beta
+
+- 🎯 **Use JSON Schema Directly**: Pass a JSON Schema `dict` to enforce structure; optionally derive it from a Pydantic model via `model_json_schema()` or by schema name (resolves `<name>.json` in your schema directory).
+- 🔌 **Provider-Aware**: OpenAI uses strict `response_format`; Anthropic converts the schema to a single enforced tool call; other providers get prompt hints plus post-validation.
+- 🔁 **Validate & Retry**: Responses are parsed and validated against the derived Pydantic model with lightweight retries; hard failures raise `SchemaValidationException`.
+- 🧰 **Runtime Model Generation**: `SchemaManager` loads schemas from dict/file/URL and generates/caches Pydantic models on the fly.
+- 🪄 **Example (JSON-first)**:
+  ```python
+  from cellsem_llm_client.agents import LiteLLMAgent
+
+  schema = {
+      "type": "object",
+      "properties": {
+          "term": {"type": "string", "description": "Cell type name"},
+          "iri": {"type": "string", "format": "uri"},
+      },
+      "required": ["term", "iri"],
+      "additionalProperties": False,
+  }
+
+  agent = LiteLLMAgent(model="gpt-4o", api_key="your-key")
+  result = agent.query_with_schema(
+      message="Return a cell type name and IRI.",
+      schema=schema,  # JSON-first
+  )
+  print(result.model_dump())  # Pydantic model generated at runtime
+  ```
 
 ## Planned/Under developemnt
 

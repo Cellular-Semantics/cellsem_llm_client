@@ -6,6 +6,7 @@
 
 installation
 quickstart
+schema_enforcement
 contributing
 ```
 
