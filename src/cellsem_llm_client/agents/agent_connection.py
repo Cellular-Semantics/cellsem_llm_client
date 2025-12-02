@@ -369,7 +369,8 @@ class LiteLLMAgent(AgentConnection):
             schema=schema,
             max_retries=max_retries,
         )
-        assert result.model is not None
+        if result.model is None:
+            raise RuntimeError("Expected model instance but none was populated")
         return result.model
 
     def query_with_schema_and_tracking(
