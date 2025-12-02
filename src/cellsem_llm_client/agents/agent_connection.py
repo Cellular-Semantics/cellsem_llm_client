@@ -176,9 +176,10 @@ class LiteLLMAgent(AgentConnection):
 
         raw_response: Any | None = None
         response_content: str | None = None
+        all_tool_responses: list[Any] | None = None
 
         if tools:
-            response_content, raw_response = self._run_tool_loop(
+            response_content, raw_response, all_tool_responses = self._run_tool_loop(
                 messages=messages,
                 tools=tools,
                 tool_handlers=tool_handlers or {},
@@ -237,11 +238,20 @@ class LiteLLMAgent(AgentConnection):
 
         usage_metrics: UsageMetrics | None = None
         if track_usage and raw_response is not None and hasattr(raw_response, "usage"):
-            usage_metrics = self._build_usage_metrics(
-                raw_response=raw_response,
-                provider=provider,
-                cost_calculator=cost_calculator,
-            )
+            # When tools were used, accumulate usage from all API calls
+            if all_tool_responses is not None:
+                usage_metrics = self._accumulate_usage_metrics(
+                    responses=all_tool_responses,
+                    provider=provider,
+                    cost_calculator=cost_calculator,
+                )
+            else:
+                # Single API call without tools
+                usage_metrics = self._build_usage_metrics(
+                    raw_response=raw_response,
+                    provider=provider,
+                    cost_calculator=cost_calculator,
+                )
 
         return QueryResult(
             text=response_content,
@@ -410,7 +420,9 @@ class LiteLLMAgent(AgentConnection):
             max_retries=max_retries,
         )
         if result.model is None or result.usage is None:
-            raise RuntimeError("Expected model instance and usage metrics but one or both were not populated")
+            raise RuntimeError(
+                "Expected model instance and usage metrics but one or both were not populated"
+            )
         return result.model, result.usage
 
     def _pydantic_model_to_schema(self, model_class: type[BaseModel]) -> dict[str, Any]:
@@ -536,9 +548,15 @@ class LiteLLMAgent(AgentConnection):
         tools: list[dict[str, Any]],
         tool_handlers: dict[str, Callable[[dict[str, Any]], str | None]],
         max_turns: int,
-    ) -> tuple[str, Any]:
-        """Execute tool calls until completion."""
+    ) -> tuple[str, Any, list[Any]]:
+        """Execute tool calls until completion.
+
+        Returns:
+            A tuple of (final_content, final_response, all_responses) where
+            all_responses contains every API response from all turns for usage tracking.
+        """
         working_messages = list(messages)
+        all_responses: list[Any] = []
 
         for _turn in range(max_turns):
             response = completion(
@@ -547,6 +565,7 @@ class LiteLLMAgent(AgentConnection):
                 tools=tools,
                 max_tokens=self.max_tokens,
             )
+            all_responses.append(response)
 
             response_message = response.choices[0].message
             tool_calls = getattr(response_message, "tool_calls", None)
@@ -599,7 +618,7 @@ class LiteLLMAgent(AgentConnection):
                     )
                 continue
 
-            return str(response_message.content), response
+            return str(response_message.content), response, all_responses
 
         raise RuntimeError("Max tool-call turns reached without a final response.")
 
@@ -646,6 +665,86 @@ class LiteLLMAgent(AgentConnection):
         return UsageMetrics(
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            cached_tokens=cached_tokens,
+            thinking_tokens=thinking_tokens,
+            estimated_cost_usd=estimated_cost_usd,
+            provider=provider,
+            model=self.model,
+            timestamp=datetime.now(),
+            cost_source="estimated",
+        )
+
+    def _accumulate_usage_metrics(
+        self,
+        responses: list[Any],
+        provider: str,
+        cost_calculator: Optional["FallbackCostCalculator"] = None,
+    ) -> UsageMetrics:
+        """Accumulate usage metrics from multiple API responses.
+
+        When tools are used, multiple API calls are made across iterations.
+        This method sums up the token usage from all calls to provide accurate
+        cumulative metrics.
+
+        Args:
+            responses: List of LiteLLM response objects from all API calls
+            provider: The LLM provider name
+            cost_calculator: Optional cost calculator for estimating costs
+
+        Returns:
+            Accumulated UsageMetrics with total token counts and costs
+        """
+        total_input_tokens = 0
+        total_output_tokens = 0
+        total_cached_tokens = 0
+        total_thinking_tokens = 0
+        has_cached = False
+        has_thinking = False
+
+        for response in responses:
+            if not hasattr(response, "usage"):
+                continue
+
+            usage = response.usage
+            total_input_tokens += usage.prompt_tokens
+            total_output_tokens += usage.completion_tokens
+
+            # Accumulate cached tokens if present
+            if (
+                hasattr(usage, "prompt_tokens_details")
+                and usage.prompt_tokens_details
+                and hasattr(usage.prompt_tokens_details, "cached_tokens")
+                and usage.prompt_tokens_details.cached_tokens is not None
+            ):
+                total_cached_tokens += usage.prompt_tokens_details.cached_tokens
+                has_cached = True
+
+        cached_tokens = total_cached_tokens if has_cached else None
+        thinking_tokens = total_thinking_tokens if has_thinking else None
+
+        # Calculate cost based on accumulated tokens
+        estimated_cost_usd = None
+        if cost_calculator:
+            try:
+                temp_usage_metrics = UsageMetrics(
+                    input_tokens=total_input_tokens,
+                    output_tokens=total_output_tokens,
+                    cached_tokens=cached_tokens,
+                    thinking_tokens=thinking_tokens,
+                    provider=provider,
+                    model=self.model,
+                    timestamp=datetime.now(),
+                    cost_source="estimated",
+                )
+                estimated_cost_usd = cost_calculator.calculate_cost(temp_usage_metrics)
+            except Exception as e:
+                logging.warning(
+                    f"Cost calculation failed for {provider}/{self.model}: {e}"
+                )
+
+        return UsageMetrics(
+            input_tokens=total_input_tokens,
+            output_tokens=total_output_tokens,
             cached_tokens=cached_tokens,
             thinking_tokens=thinking_tokens,
             estimated_cost_usd=estimated_cost_usd,

@@ -414,6 +414,78 @@ class TestLiteLLMAgent:
 
     @pytest.mark.unit
     @patch("cellsem_llm_client.agents.agent_connection.completion")
+    def test_query_unified_with_tools_accumulates_usage(
+        self, mock_completion: Any
+    ) -> None:
+        """Test that usage metrics accumulate across multiple tool call iterations."""
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_data",
+                    "description": "Get data",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"query": {"type": "string"}},
+                        "required": ["query"],
+                    },
+                },
+            }
+        ]
+
+        # First API call - tool call requested
+        tool_call = Mock()
+        tool_call.id = "call_1"
+        tool_call.type = "function"
+        tool_call.function = Mock()
+        tool_call.function.name = "get_data"
+        tool_call.function.arguments = '{"query": "test"}'
+
+        first_response = Mock()
+        first_response.choices = [Mock()]
+        first_response.choices[0].message.content = None
+        first_response.choices[0].message.tool_calls = [tool_call]
+        first_response.usage = Mock()
+        first_response.usage.prompt_tokens = 100
+        first_response.usage.completion_tokens = 20
+        first_response.usage.prompt_tokens_details = None
+
+        # Second API call - final response
+        final_response = Mock()
+        final_response.choices = [Mock()]
+        final_response.choices[0].message.content = "Here is the result."
+        final_response.choices[0].message.tool_calls = []
+        final_response.usage = Mock()
+        final_response.usage.prompt_tokens = 150
+        final_response.usage.completion_tokens = 30
+        final_response.usage.prompt_tokens_details = None
+
+        mock_completion.side_effect = [first_response, final_response]
+
+        def get_data(args: dict[str, Any]) -> str:
+            return "data result"
+
+        agent = LiteLLMAgent(model="gpt-4", api_key="test-key")
+        result = agent.query_unified(
+            message="Get me data",
+            tools=tools,
+            tool_handlers={"get_data": get_data},
+            track_usage=True,
+        )
+
+        # Verify response
+        assert result.text == "Here is the result."
+        assert result.usage is not None
+
+        # Verify cumulative usage: 100 + 150 = 250 input, 20 + 30 = 50 output
+        assert result.usage.input_tokens == 250
+        assert result.usage.output_tokens == 50
+        assert result.usage.total_tokens == 300
+        assert result.usage.provider == "openai"
+        assert result.usage.model == "gpt-4"
+
+    @pytest.mark.unit
+    @patch("cellsem_llm_client.agents.agent_connection.completion")
     def test_query_unified_basic(self, mock_completion: Any) -> None:
         """Test unified query returns text."""
         mock_response = Mock()
