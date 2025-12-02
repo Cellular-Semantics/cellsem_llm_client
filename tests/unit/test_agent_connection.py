@@ -414,6 +414,70 @@ class TestLiteLLMAgent:
 
     @pytest.mark.unit
     @patch("cellsem_llm_client.agents.agent_connection.completion")
+    def test_query_unified_tools_and_schema(self, mock_completion: Any) -> None:
+        """Tool loop should run and then validate final content against schema."""
+
+        class SampleModel(BaseModel):
+            answer: str
+
+        tool_call = Mock()
+        tool_call.id = "call_1"
+        tool_call.type = "function"
+        tool_call.function = Mock()
+        tool_call.function.name = "fetch_data"
+        tool_call.function.arguments = "{}"
+
+        first_response = Mock()
+        first_response.choices = [Mock()]
+        first_response.choices[0].message.content = None
+        first_response.choices[0].message.tool_calls = [tool_call]
+        first_response.usage = Mock()
+        first_response.usage.prompt_tokens = 1
+        first_response.usage.completion_tokens = 1
+        first_response.usage.prompt_tokens_details = None
+
+        final_payload = {"answer": "done"}
+        final_response = Mock()
+        final_response.choices = [Mock()]
+        final_response.choices[0].message.content = json.dumps(final_payload)
+        final_response.choices[0].message.tool_calls = []
+        final_response.usage = Mock()
+        final_response.usage.prompt_tokens = 1
+        final_response.usage.completion_tokens = 1
+        final_response.usage.prompt_tokens_details = None
+
+        mock_completion.side_effect = [first_response, final_response]
+
+        agent = LiteLLMAgent(model="gpt-3.5-turbo", api_key="test-key")
+
+        executed = {}
+
+        def fetch_data(_: dict[str, Any]) -> str:
+            executed["ran"] = True
+            return "ok"
+
+        result = agent.query_unified(
+            message="Use the tool then answer in JSON",
+            tools=[
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "fetch_data",
+                        "parameters": {"type": "object"},
+                        "description": "dummy",
+                    },
+                }
+            ],
+            tool_handlers={"fetch_data": fetch_data},
+            schema=SampleModel,
+        )
+
+        assert executed.get("ran") is True
+        assert result.model is not None
+        assert result.model.answer == "done"
+
+    @pytest.mark.unit
+    @patch("cellsem_llm_client.agents.agent_connection.completion")
     def test_query_unified_with_tools_accumulates_usage(
         self, mock_completion: Any
     ) -> None:

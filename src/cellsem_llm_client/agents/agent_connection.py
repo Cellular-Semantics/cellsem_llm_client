@@ -160,7 +160,33 @@ class LiteLLMAgent(AgentConnection):
         cost_calculator: Optional["FallbackCostCalculator"] = None,
         max_retries: int = 2,
     ) -> QueryResult:
-        """Unified query interface with optional tools, schema enforcement, and tracking."""
+        """Unified query interface with optional tools, schema enforcement, and tracking.
+
+        This method consolidates the previous `query*` variants. Use feature flags/args
+        instead of separate methods:
+
+        Args:
+            message: User message.
+            system_message: Optional system prompt.
+            schema: JSON Schema dict, Pydantic model class, or schema name for
+                enforcement + validation. If provided with tools, validation runs
+                on the final assistant message after tool calls finish.
+            tools: LiteLLM tool definitions. Enables tool-call loop.
+            tool_handlers: Mapping of tool names to callables for execution.
+            max_turns: Max tool-call iterations before giving up.
+            track_usage: Whether to return usage metrics.
+            cost_calculator: Optional cost calculator for estimated cost.
+            max_retries: Validation retry limit when `schema` is provided.
+
+        Returns:
+            QueryResult containing final text, optional validated Pydantic model,
+            optional usage metrics, and the raw LiteLLM response.
+
+        Raises:
+            SchemaValidationException: If schema validation fails after retries.
+            ValueError: For missing tool handlers or argument parsing failures.
+            RuntimeError: If tool loop exceeds `max_turns`.
+        """
         messages: list[dict[str, Any]] = []
         if system_message:
             messages.append({"role": "system", "content": system_message})
