@@ -11,7 +11,11 @@ repos:
     hooks:
       - id: mypy
         additional_dependencies: [types-requests]
-        args: [--ignore-missing-imports]
+        args:
+          - --config-file=pyproject.toml
+          - src
+          - tests
+        pass_filenames: false
 
   - repo: local
     hooks:

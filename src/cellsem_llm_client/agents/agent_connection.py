@@ -2,8 +2,10 @@
 
 import json
 import logging
+import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -17,6 +19,17 @@ from cellsem_llm_client.schema import (
     SchemaValidator,
 )
 from cellsem_llm_client.tracking.usage_metrics import UsageMetrics
+
+
+@dataclass
+class QueryResult:
+    """Structured result returned by unified query interface."""
+
+    text: str | None
+    model: BaseModel | None = None
+    usage: UsageMetrics | None = None
+    raw_response: Any | None = None
+
 
 if TYPE_CHECKING:
     from cellsem_llm_client.tracking.cost_calculator import FallbackCostCalculator
@@ -135,6 +148,108 @@ class LiteLLMAgent(AgentConnection):
         self._schema_validator = SchemaValidator()
         self._adapter_factory = SchemaAdapterFactory()
 
+    def query_unified(
+        self,
+        message: str,
+        system_message: str | None = None,
+        schema: dict[str, Any] | type[BaseModel] | str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_handlers: dict[str, Callable[[dict[str, Any]], str | None]] | None = None,
+        max_turns: int = 5,
+        track_usage: bool = False,
+        cost_calculator: Optional["FallbackCostCalculator"] = None,
+        max_retries: int = 2,
+    ) -> QueryResult:
+        """Unified query interface with optional tools, schema enforcement, and tracking."""
+        messages: list[dict[str, Any]] = []
+        if system_message:
+            messages.append({"role": "system", "content": system_message})
+        messages.append({"role": "user", "content": message})
+
+        provider = self._get_provider_from_model(self.model)
+        pydantic_model: type[BaseModel] | None = None
+        schema_dict: dict[str, Any] | None = None
+
+        if schema is not None:
+            pydantic_model = self._schema_manager.get_pydantic_model(schema)
+            schema_dict = self._pydantic_model_to_schema(pydantic_model)
+
+        raw_response: Any | None = None
+        response_content: str | None = None
+
+        if tools:
+            response_content, raw_response = self._run_tool_loop(
+                messages=messages,
+                tools=tools,
+                tool_handlers=tool_handlers or {},
+                max_turns=max_turns,
+            )
+        elif schema_dict is not None:
+            adapter = self._adapter_factory.get_adapter(provider, self.model)
+            from cellsem_llm_client.schema.adapters import AnthropicSchemaAdapter
+
+            if isinstance(adapter, AnthropicSchemaAdapter):
+                raw_response = completion(
+                    model=self.model,
+                    messages=messages,
+                    tools=[adapter._create_tool_definition(schema_dict)],
+                    tool_choice={
+                        "type": "function",
+                        "function": {"name": "structured_response"},
+                    },
+                    max_tokens=self.max_tokens,
+                )
+                extracted = adapter._extract_tool_response(raw_response)
+                response_content = json.dumps(extracted)
+            else:
+                raw_response = adapter.apply_schema(
+                    messages=messages,
+                    schema_dict=schema_dict,
+                    model=self.model,
+                    max_tokens=self.max_tokens,
+                )
+                response_content = str(raw_response.choices[0].message.content)
+        else:
+            raw_response = completion(
+                model=self.model,
+                messages=messages,
+                max_tokens=self.max_tokens,
+            )
+            response_content = str(raw_response.choices[0].message.content)
+
+        validated_model: BaseModel | None = None
+        if pydantic_model is not None and response_content is not None:
+            validation_result = self._schema_validator.validate_with_retry(
+                response_text=response_content,
+                target_model=pydantic_model,
+                max_retries=max_retries,
+            )
+            if not validation_result.success:
+                raise SchemaValidationException(
+                    f"Schema validation failed after {max_retries} retries: {validation_result.error}",
+                    schema=str(schema),
+                    response_text=response_content,
+                    validation_errors=[str(validation_result.error)]
+                    if validation_result.error
+                    else [],
+                )
+            validated_model = validation_result.model_instance
+
+        usage_metrics: UsageMetrics | None = None
+        if track_usage and raw_response is not None and hasattr(raw_response, "usage"):
+            usage_metrics = self._build_usage_metrics(
+                raw_response=raw_response,
+                provider=provider,
+                cost_calculator=cost_calculator,
+            )
+
+        return QueryResult(
+            text=response_content,
+            model=validated_model,
+            usage=usage_metrics,
+            raw_response=raw_response,
+        )
+
     def query(self, message: str, system_message: str | None = None) -> str:
         """Send a query to the LLM using LiteLLM.
 
@@ -145,20 +260,11 @@ class LiteLLMAgent(AgentConnection):
         Returns:
             The LLM's response as a string
         """
-        messages = []
-
-        if system_message:
-            messages.append({"role": "system", "content": system_message})
-
-        messages.append({"role": "user", "content": message})
-
-        response = completion(
-            model=self.model,
-            messages=messages,
-            max_tokens=self.max_tokens,
+        result = self.query_unified(
+            message=message,
+            system_message=system_message,
         )
-
-        return str(response.choices[0].message.content)
+        return result.text or ""
 
     def query_with_tools(
         self,
@@ -186,79 +292,19 @@ class LiteLLMAgent(AgentConnection):
             RuntimeError: If the conversation does not terminate within
                 ``max_turns`` iterations.
         """
-        messages: list[dict[str, Any]] = []
-
-        if system_message:
-            messages.append({"role": "system", "content": system_message})
-
-        messages.append({"role": "user", "content": message})
-
-        for _turn in range(max_turns):
-            response = completion(
-                model=self.model,
-                messages=[*messages],
-                tools=tools,
-                max_tokens=self.max_tokens,
-            )
-
-            response_message = response.choices[0].message
-            tool_calls = getattr(response_message, "tool_calls", None)
-
-            if tool_calls:
-                handler_map: dict[str, Callable[[dict[str, Any]], str | None]] = (
-                    tool_handlers or {}
-                )
-
-                assistant_message: dict[str, Any] = {
-                    "role": "assistant",
-                    "content": response_message.content,
-                    "tool_calls": [],
-                }
-                messages.append(assistant_message)
-
-                for tool_call in tool_calls:
-                    function_call = getattr(tool_call, "function", None)
-                    tool_name = getattr(function_call, "name", None)
-                    tool_arguments = getattr(function_call, "arguments", {})
-
-                    assistant_message["tool_calls"].append(
-                        {
-                            "id": getattr(tool_call, "id", ""),
-                            "type": getattr(tool_call, "type", "function"),
-                            "function": {
-                                "name": tool_name,
-                                "arguments": tool_arguments,
-                            },
-                        }
-                    )
-
-                    if not tool_name or tool_name not in handler_map:
-                        raise ValueError(f"No handler found for tool '{tool_name}'.")
-
-                    try:
-                        parsed_args = (
-                            json.loads(tool_arguments)
-                            if isinstance(tool_arguments, str)
-                            else tool_arguments
-                        )
-                    except Exception as exc:
-                        raise ValueError(
-                            f"Failed to parse arguments for tool '{tool_name}'."
-                        ) from exc
-
-                    tool_result = handler_map[tool_name](parsed_args)
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": getattr(tool_call, "id", tool_name),
-                            "content": tool_result if tool_result is not None else "",
-                        }
-                    )
-                continue
-
-            return str(response_message.content)
-
-        raise RuntimeError("Max tool-call turns reached without a final response.")
+        warnings.warn(
+            "query_with_tools is deprecated; use query_unified with tools/tool_handlers.",
+            PendingDeprecationWarning,
+            stacklevel=2,
+        )
+        result = self.query_unified(
+            message=message,
+            system_message=system_message,
+            tools=tools,
+            tool_handlers=tool_handlers,
+            max_turns=max_turns,
+        )
+        return result.text or ""
 
     def query_with_tracking(
         self,
@@ -276,78 +322,19 @@ class LiteLLMAgent(AgentConnection):
         Returns:
             Tuple of (response, usage_metrics)
         """
-        messages = []
-
-        if system_message:
-            messages.append({"role": "system", "content": system_message})
-
-        messages.append({"role": "user", "content": message})
-
-        response = completion(
-            model=self.model,
-            messages=messages,
-            max_tokens=self.max_tokens,
+        warnings.warn(
+            "query_with_tracking is deprecated; use query_unified with track_usage=True.",
+            PendingDeprecationWarning,
+            stacklevel=2,
         )
-
-        # Extract usage information from LiteLLM response
-        usage = response.usage
-        input_tokens = usage.prompt_tokens
-        output_tokens = usage.completion_tokens
-
-        # Extract cached tokens (OpenAI specific)
-        cached_tokens = None
-        if (
-            hasattr(usage, "prompt_tokens_details")
-            and usage.prompt_tokens_details
-            and hasattr(usage.prompt_tokens_details, "cached_tokens")
-        ):
-            cached_tokens = usage.prompt_tokens_details.cached_tokens
-
-        # Extract thinking tokens (Anthropic specific)
-        # Note: LiteLLM may not expose thinking tokens directly yet
-        thinking_tokens = None
-
-        # Determine provider from model name
-        provider = self._get_provider_from_model(self.model)
-
-        # Calculate cost if calculator provided
-        estimated_cost_usd = None
-        if cost_calculator:
-            try:
-                # Create temporary metrics for cost calculation
-                temp_usage_metrics = UsageMetrics(
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
-                    cached_tokens=cached_tokens,
-                    thinking_tokens=thinking_tokens,
-                    provider=provider,
-                    model=self.model,
-                    timestamp=datetime.now(),
-                    cost_source="estimated",
-                )
-                estimated_cost_usd = cost_calculator.calculate_cost(temp_usage_metrics)
-            except Exception as e:
-                # Log cost calculation failure but continue without cost estimation
-                logging.warning(
-                    f"Cost calculation failed for {provider}/{self.model}: {e}"
-                )
-                estimated_cost_usd = None
-
-        # Create final usage metrics with cost
-        usage_metrics = UsageMetrics(
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cached_tokens=cached_tokens,
-            thinking_tokens=thinking_tokens,
-            estimated_cost_usd=estimated_cost_usd,
-            provider=provider,
-            model=self.model,
-            timestamp=datetime.now(),
-            cost_source="estimated",
+        result = self.query_unified(
+            message=message,
+            system_message=system_message,
+            track_usage=True,
+            cost_calculator=cost_calculator,
         )
-
-        response_text = str(response.choices[0].message.content)
-        return response_text, usage_metrics
+        assert result.usage is not None
+        return result.text or "", result.usage
 
     def query_with_schema(
         self,
@@ -370,15 +357,19 @@ class LiteLLMAgent(AgentConnection):
         Raises:
             SchemaValidationException: If schema validation fails after max retries
         """
-        # Call the tracking version and discard usage metrics
-        result, _ = self.query_with_schema_and_tracking(
+        warnings.warn(
+            "query_with_schema is deprecated; use query_unified with schema=...",
+            PendingDeprecationWarning,
+            stacklevel=2,
+        )
+        result = self.query_unified(
             message=message,
-            schema=schema,
             system_message=system_message,
-            cost_calculator=None,
+            schema=schema,
             max_retries=max_retries,
         )
-        return result
+        assert result.model is not None
+        return result.model
 
     def query_with_schema_and_tracking(
         self,
@@ -403,133 +394,21 @@ class LiteLLMAgent(AgentConnection):
         Raises:
             SchemaValidationException: If schema validation fails after max retries
         """
-        # Get Pydantic model from schema input
-        pydantic_model = self._schema_manager.get_pydantic_model(schema)
-
-        # Convert Pydantic model to JSON schema for adapter
-        schema_dict = self._pydantic_model_to_schema(pydantic_model)
-
-        # Get appropriate adapter for this provider/model
-        provider = self._get_provider_from_model(self.model)
-        adapter = self._adapter_factory.get_adapter(provider, self.model)
-
-        # Prepare messages
-        messages = []
-        if system_message:
-            messages.append({"role": "system", "content": system_message})
-        messages.append({"role": "user", "content": message})
-
-        # For Anthropic, we need to handle differently to preserve usage info
-        from cellsem_llm_client.schema.adapters import AnthropicSchemaAdapter
-
-        if isinstance(adapter, AnthropicSchemaAdapter):
-            # Call completion directly to get both response and usage info
-            raw_response = completion(
-                model=self.model,
-                messages=messages,
-                tools=[adapter._create_tool_definition(schema_dict)],
-                tool_choice={
-                    "type": "function",
-                    "function": {"name": "structured_response"},
-                },
-                max_tokens=self.max_tokens,
-            )
-
-            # Extract structured response using adapter
-            response = adapter._extract_tool_response(raw_response)
-            response_for_usage = raw_response
-        else:
-            # Apply schema enforcement using adapter
-            response = adapter.apply_schema(
-                messages=messages,
-                schema_dict=schema_dict,
-                model=self.model,
-                max_tokens=self.max_tokens,
-            )
-            response_for_usage = response
-
-        # Extract usage information from response
-        usage = response_for_usage.usage
-        input_tokens = usage.prompt_tokens
-        output_tokens = usage.completion_tokens
-
-        # Extract cached tokens (OpenAI specific)
-        cached_tokens = None
-        if (
-            hasattr(usage, "prompt_tokens_details")
-            and usage.prompt_tokens_details
-            and hasattr(usage.prompt_tokens_details, "cached_tokens")
-        ):
-            cached_tokens = usage.prompt_tokens_details.cached_tokens
-
-        # Extract thinking tokens (future enhancement)
-        thinking_tokens = None
-
-        # Calculate cost if calculator provided
-        estimated_cost_usd = None
-        if cost_calculator:
-            try:
-                temp_usage_metrics = UsageMetrics(
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
-                    cached_tokens=cached_tokens,
-                    thinking_tokens=thinking_tokens,
-                    provider=provider,
-                    model=self.model,
-                    timestamp=datetime.now(),
-                    cost_source="estimated",
-                )
-                estimated_cost_usd = cost_calculator.calculate_cost(temp_usage_metrics)
-            except Exception as e:
-                # Log cost calculation failure but continue without cost estimation
-                logging.warning(
-                    f"Cost calculation failed for {provider}/{self.model}: {e}"
-                )
-                estimated_cost_usd = None
-
-        # Create usage metrics
-        usage_metrics = UsageMetrics(
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cached_tokens=cached_tokens,
-            thinking_tokens=thinking_tokens,
-            estimated_cost_usd=estimated_cost_usd,
-            provider=provider,
-            model=self.model,
-            timestamp=datetime.now(),
-            cost_source="estimated",
+        warnings.warn(
+            "query_with_schema_and_tracking is deprecated; use query_unified with schema=... and track_usage=True.",
+            PendingDeprecationWarning,
+            stacklevel=2,
         )
-
-        # Extract response content based on adapter type
-        if isinstance(adapter, AnthropicSchemaAdapter):
-            # Anthropic: response is already the extracted dict
-            response_content = json.dumps(response)
-        elif adapter.supports_native_schema():
-            # For other native schema adapters (OpenAI), get content from message
-            response_content = str(response.choices[0].message.content)  # type: ignore
-        else:
-            # For fallback adapters, content is in message
-            response_content = str(response.choices[0].message.content)  # type: ignore
-
-        # Validate response against schema with retry logic
-        validation_result = self._schema_validator.validate_with_retry(
-            response_text=response_content,
-            target_model=pydantic_model,
+        result = self.query_unified(
+            message=message,
+            schema=schema,
+            system_message=system_message,
+            track_usage=True,
+            cost_calculator=cost_calculator,
             max_retries=max_retries,
         )
-
-        if not validation_result.success:
-            raise SchemaValidationException(
-                f"Schema validation failed after {max_retries} retries: {validation_result.error}",
-                schema=str(schema),
-                response_text=response_content,
-                validation_errors=[str(validation_result.error)]
-                if validation_result.error
-                else [],
-            )
-
-        assert validation_result.model_instance is not None
-        return validation_result.model_instance, usage_metrics
+        assert result.model is not None and result.usage is not None
+        return result.model, result.usage
 
     def _pydantic_model_to_schema(self, model_class: type[BaseModel]) -> dict[str, Any]:
         """Convert Pydantic model to JSON schema dict.
@@ -647,6 +526,131 @@ class LiteLLMAgent(AgentConnection):
                         for item in value:
                             if isinstance(item, dict):
                                 self._ensure_no_additional_properties(item)
+
+    def _run_tool_loop(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        tool_handlers: dict[str, Callable[[dict[str, Any]], str | None]],
+        max_turns: int,
+    ) -> tuple[str, Any]:
+        """Execute tool calls until completion."""
+        working_messages = list(messages)
+
+        for _turn in range(max_turns):
+            response = completion(
+                model=self.model,
+                messages=[*working_messages],
+                tools=tools,
+                max_tokens=self.max_tokens,
+            )
+
+            response_message = response.choices[0].message
+            tool_calls = getattr(response_message, "tool_calls", None)
+
+            if tool_calls:
+                assistant_message: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": response_message.content,
+                    "tool_calls": [],
+                }
+                working_messages.append(assistant_message)
+
+                for tool_call in tool_calls:
+                    function_call = getattr(tool_call, "function", None)
+                    tool_name = getattr(function_call, "name", None)
+                    tool_arguments = getattr(function_call, "arguments", {})
+
+                    assistant_message["tool_calls"].append(
+                        {
+                            "id": getattr(tool_call, "id", ""),
+                            "type": getattr(tool_call, "type", "function"),
+                            "function": {
+                                "name": tool_name,
+                                "arguments": tool_arguments,
+                            },
+                        }
+                    )
+
+                    if not tool_name or tool_name not in tool_handlers:
+                        raise ValueError(f"No handler found for tool '{tool_name}'.")
+
+                    try:
+                        parsed_args = (
+                            json.loads(tool_arguments)
+                            if isinstance(tool_arguments, str)
+                            else tool_arguments
+                        )
+                    except Exception as exc:
+                        raise ValueError(
+                            f"Failed to parse arguments for tool '{tool_name}'."
+                        ) from exc
+
+                    tool_result = tool_handlers[tool_name](parsed_args)
+                    working_messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": getattr(tool_call, "id", tool_name),
+                            "content": tool_result if tool_result is not None else "",
+                        }
+                    )
+                continue
+
+            return str(response_message.content), response
+
+        raise RuntimeError("Max tool-call turns reached without a final response.")
+
+    def _build_usage_metrics(
+        self,
+        raw_response: Any,
+        provider: str,
+        cost_calculator: Optional["FallbackCostCalculator"] = None,
+    ) -> UsageMetrics:
+        """Construct UsageMetrics from a LiteLLM response."""
+        usage = raw_response.usage
+        input_tokens = usage.prompt_tokens
+        output_tokens = usage.completion_tokens
+
+        cached_tokens = None
+        if (
+            hasattr(usage, "prompt_tokens_details")
+            and usage.prompt_tokens_details
+            and hasattr(usage.prompt_tokens_details, "cached_tokens")
+        ):
+            cached_tokens = usage.prompt_tokens_details.cached_tokens
+
+        thinking_tokens = None
+
+        estimated_cost_usd = None
+        if cost_calculator:
+            try:
+                temp_usage_metrics = UsageMetrics(
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cached_tokens=cached_tokens,
+                    thinking_tokens=thinking_tokens,
+                    provider=provider,
+                    model=self.model,
+                    timestamp=datetime.now(),
+                    cost_source="estimated",
+                )
+                estimated_cost_usd = cost_calculator.calculate_cost(temp_usage_metrics)
+            except Exception as e:
+                logging.warning(
+                    f"Cost calculation failed for {provider}/{self.model}: {e}"
+                )
+
+        return UsageMetrics(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cached_tokens=cached_tokens,
+            thinking_tokens=thinking_tokens,
+            estimated_cost_usd=estimated_cost_usd,
+            provider=provider,
+            model=self.model,
+            timestamp=datetime.now(),
+            cost_source="estimated",
+        )
 
     def _get_provider_from_model(self, model: str) -> str:
         """Determine provider from model name.
