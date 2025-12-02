@@ -718,9 +718,6 @@ class LiteLLMAgent(AgentConnection):
                 total_cached_tokens += usage.prompt_tokens_details.cached_tokens
                 has_cached = True
 
-            # Accumulate thinking tokens if present (future support)
-            # Currently not implemented in LiteLLM responses
-
         cached_tokens = total_cached_tokens if has_cached else None
         thinking_tokens = total_thinking_tokens if has_thinking else None
 
