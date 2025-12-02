@@ -408,7 +408,8 @@ class LiteLLMAgent(AgentConnection):
             cost_calculator=cost_calculator,
             max_retries=max_retries,
         )
-        assert result.model is not None and result.usage is not None
+        if result.model is None or result.usage is None:
+            raise RuntimeError("Expected model instance and usage metrics but one or both were not populated")
         return result.model, result.usage
 
     def _pydantic_model_to_schema(self, model_class: type[BaseModel]) -> dict[str, Any]:
