@@ -333,7 +333,8 @@ class LiteLLMAgent(AgentConnection):
             track_usage=True,
             cost_calculator=cost_calculator,
         )
-        assert result.usage is not None
+        if result.usage is None:
+            raise RuntimeError("Expected usage metrics but none were populated")
         return result.text or "", result.usage
 
     def query_with_schema(
