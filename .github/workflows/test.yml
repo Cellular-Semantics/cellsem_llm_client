@@ -40,7 +40,7 @@ jobs:
       run: |
         uv run ruff check src/ tests/
         uv run ruff format --check src/ tests/
-        uv run mypy src/
+        uv run mypy src/ tests/
 
     - name: Upload coverage reports
       if: matrix.python-version == '3.12'
@@ -49,4 +49,3 @@ jobs:
         file: ./coverage.xml
         fail_ci_if_error: false
         verbose: true
-

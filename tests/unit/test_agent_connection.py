@@ -1,9 +1,12 @@
 """Unit tests for agent connection classes."""
 
+import json
+import warnings
 from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
+from pydantic import BaseModel
 
 # Import will fail initially - that's expected for TDD
 from cellsem_llm_client.agents.agent_connection import (
@@ -405,9 +408,221 @@ class TestLiteLLMAgent:
         with pytest.raises(ValueError, match="missing_tool"):
             agent.query_with_tools(
                 message="Trigger a tool call",
-                tools=[],
+                tools=[{"type": "function", "function": {"name": "missing_tool"}}],
                 tool_handlers={},
             )
+
+    @pytest.mark.unit
+    @patch("cellsem_llm_client.agents.agent_connection.completion")
+    def test_query_unified_tools_and_schema(self, mock_completion: Any) -> None:
+        """Tool loop should run and then validate final content against schema."""
+
+        class SampleModel(BaseModel):
+            answer: str
+
+        tool_call = Mock()
+        tool_call.id = "call_1"
+        tool_call.type = "function"
+        tool_call.function = Mock()
+        tool_call.function.name = "fetch_data"
+        tool_call.function.arguments = "{}"
+
+        first_response = Mock()
+        first_response.choices = [Mock()]
+        first_response.choices[0].message.content = None
+        first_response.choices[0].message.tool_calls = [tool_call]
+        first_response.usage = Mock()
+        first_response.usage.prompt_tokens = 1
+        first_response.usage.completion_tokens = 1
+        first_response.usage.prompt_tokens_details = None
+
+        final_payload = {"answer": "done"}
+        final_response = Mock()
+        final_response.choices = [Mock()]
+        final_response.choices[0].message.content = json.dumps(final_payload)
+        final_response.choices[0].message.tool_calls = []
+        final_response.usage = Mock()
+        final_response.usage.prompt_tokens = 1
+        final_response.usage.completion_tokens = 1
+        final_response.usage.prompt_tokens_details = None
+
+        mock_completion.side_effect = [first_response, final_response]
+
+        agent = LiteLLMAgent(model="gpt-3.5-turbo", api_key="test-key")
+
+        executed = {}
+
+        def fetch_data(_: dict[str, Any]) -> str:
+            executed["ran"] = True
+            return "ok"
+
+        result = agent.query_unified(
+            message="Use the tool then answer in JSON",
+            tools=[
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "fetch_data",
+                        "parameters": {"type": "object"},
+                        "description": "dummy",
+                    },
+                }
+            ],
+            tool_handlers={"fetch_data": fetch_data},
+            schema=SampleModel,
+        )
+
+        assert executed.get("ran") is True
+        assert result.model is not None
+        assert result.model.answer == "done"
+
+    @pytest.mark.unit
+    @patch("cellsem_llm_client.agents.agent_connection.completion")
+    def test_query_unified_with_tools_accumulates_usage(
+        self, mock_completion: Any
+    ) -> None:
+        """Test that usage metrics accumulate across multiple tool call iterations."""
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_data",
+                    "description": "Get data",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"query": {"type": "string"}},
+                        "required": ["query"],
+                    },
+                },
+            }
+        ]
+
+        # First API call - tool call requested
+        tool_call = Mock()
+        tool_call.id = "call_1"
+        tool_call.type = "function"
+        tool_call.function = Mock()
+        tool_call.function.name = "get_data"
+        tool_call.function.arguments = '{"query": "test"}'
+
+        first_response = Mock()
+        first_response.choices = [Mock()]
+        first_response.choices[0].message.content = None
+        first_response.choices[0].message.tool_calls = [tool_call]
+        first_response.usage = Mock()
+        first_response.usage.prompt_tokens = 100
+        first_response.usage.completion_tokens = 20
+        first_response.usage.prompt_tokens_details = None
+
+        # Second API call - final response
+        final_response = Mock()
+        final_response.choices = [Mock()]
+        final_response.choices[0].message.content = "Here is the result."
+        final_response.choices[0].message.tool_calls = []
+        final_response.usage = Mock()
+        final_response.usage.prompt_tokens = 150
+        final_response.usage.completion_tokens = 30
+        final_response.usage.prompt_tokens_details = None
+
+        mock_completion.side_effect = [first_response, final_response]
+
+        def get_data(args: dict[str, Any]) -> str:
+            return "data result"
+
+        agent = LiteLLMAgent(model="gpt-4", api_key="test-key")
+        result = agent.query_unified(
+            message="Get me data",
+            tools=tools,
+            tool_handlers={"get_data": get_data},
+            track_usage=True,
+        )
+
+        # Verify response
+        assert result.text == "Here is the result."
+        assert result.usage is not None
+
+        # Verify cumulative usage: 100 + 150 = 250 input, 20 + 30 = 50 output
+        assert result.usage.input_tokens == 250
+        assert result.usage.output_tokens == 50
+        assert result.usage.total_tokens == 300
+        assert result.usage.provider == "openai"
+        assert result.usage.model == "gpt-4"
+
+    @pytest.mark.unit
+    @patch("cellsem_llm_client.agents.agent_connection.completion")
+    def test_query_unified_basic(self, mock_completion: Any) -> None:
+        """Test unified query returns text."""
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Unified response"
+        mock_response.usage = Mock()
+        mock_response.usage.prompt_tokens = 1
+        mock_response.usage.completion_tokens = 1
+        mock_response.usage.prompt_tokens_details = None
+        mock_completion.return_value = mock_response
+
+        agent = LiteLLMAgent(model="gpt-3.5-turbo", api_key="test-key")
+        result = agent.query_unified(message="Hello")
+
+        assert result.text == "Unified response"
+        assert result.model is None
+
+    @pytest.mark.unit
+    @patch("cellsem_llm_client.schema.adapters.litellm.completion")
+    @patch("cellsem_llm_client.agents.agent_connection.completion")
+    def test_query_unified_with_schema(
+        self, mock_agent_completion: Any, mock_adapter_completion: Any
+    ) -> None:
+        """Test unified query enforces schema."""
+
+        class SampleModel(BaseModel):
+            term: str
+            iri: str
+
+        payload = {"term": "cell", "iri": "http://example.com"}
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = json.dumps(payload)
+        mock_response.usage = Mock()
+        mock_response.usage.prompt_tokens = 1
+        mock_response.usage.completion_tokens = 1
+        mock_response.usage.prompt_tokens_details = None
+        mock_agent_completion.return_value = mock_response
+        mock_adapter_completion.return_value = mock_response
+
+        agent = LiteLLMAgent(model="gpt-4o", api_key="test-key")
+        result = agent.query_unified(message="Return term and iri", schema=SampleModel)
+
+        assert result.model is not None
+        assert result.model.term == "cell"
+
+    @pytest.mark.unit
+    @patch("cellsem_llm_client.schema.adapters.litellm.completion")
+    @patch("cellsem_llm_client.agents.agent_connection.completion")
+    def test_deprecated_wrappers_warn(
+        self, mock_agent_completion: Any, mock_adapter_completion: Any
+    ) -> None:
+        """Deprecated methods should emit PendingDeprecationWarning."""
+
+        class SampleModel(BaseModel):
+            reply: str
+
+        payload = {"reply": "ok"}
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = json.dumps(payload)
+        mock_response.usage = Mock()
+        mock_response.usage.prompt_tokens = 1
+        mock_response.usage.completion_tokens = 1
+        mock_response.usage.prompt_tokens_details = None
+        mock_agent_completion.return_value = mock_response
+        mock_adapter_completion.return_value = mock_response
+
+        agent = LiteLLMAgent(model="gpt-4o", api_key="test-key")
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always", PendingDeprecationWarning)
+            agent.query_with_schema("test", SampleModel)
+        assert any(issubclass(wi.category, PendingDeprecationWarning) for wi in w)
 
 
 class TestOpenAIAgent:
