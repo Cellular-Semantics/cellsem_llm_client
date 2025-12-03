@@ -54,6 +54,9 @@ Issues = "https://github.com/Cellular-Semantics/cellsem_llm_client/issues"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"cellsem_llm_client.tracking" = ["rates.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
