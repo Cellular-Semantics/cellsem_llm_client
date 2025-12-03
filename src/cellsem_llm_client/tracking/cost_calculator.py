@@ -1,6 +1,9 @@
 """Fallback cost calculation with rate database and source tracking."""
 
+import json
+import logging
 from datetime import datetime, timedelta
+from importlib import resources
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -116,14 +119,11 @@ class FallbackCostCalculator:
         """
         self._rate_database = {}
         try:
-            import json
-            from importlib import resources
-
             with (
                 resources.files("cellsem_llm_client.tracking")
                 .joinpath("rates.json")
-                .open("r", encoding="utf-8") as f
-            ):
+                .open("r", encoding="utf-8")
+            ) as f:
                 data = json.load(f)
 
             for entry in data:
@@ -136,57 +136,67 @@ class FallbackCostCalculator:
                 rate = ModelCostData(source=source, **entry)
                 self._rate_database[(rate.provider, rate.model)] = rate
             return
-        except Exception:
-            # Fall back to embedded defaults if reading bundled data fails
-            default_source = RateSource(
-                name="Provider Documentation",
-                url="https://openai.com/pricing | https://anthropic.com/pricing",
-                access_date=datetime.now(),
+        except (FileNotFoundError, json.JSONDecodeError, KeyError, ValueError) as exc:
+            logging.warning(
+                "Failed to load bundled rates.json (%s). Falling back to embedded defaults.",
+                exc,
+            )
+        except Exception as exc:
+            logging.warning(
+                "Unexpected error loading bundled rates.json (%s). Falling back to embedded defaults.",
+                exc,
             )
 
-            fallback_rates = [
-                ModelCostData(
-                    provider="openai",
-                    model="gpt-4",
-                    input_cost_per_1k_tokens=0.03,
-                    output_cost_per_1k_tokens=0.06,
-                    source=default_source,
-                ),
-                ModelCostData(
-                    provider="openai",
-                    model="gpt-3.5-turbo",
-                    input_cost_per_1k_tokens=0.0015,
-                    output_cost_per_1k_tokens=0.002,
-                    source=default_source,
-                ),
-                ModelCostData(
-                    provider="openai",
-                    model="gpt-4o-mini",
-                    input_cost_per_1k_tokens=0.00015,
-                    output_cost_per_1k_tokens=0.0006,
-                    cached_cost_per_1k_tokens=0.000075,
-                    source=default_source,
-                ),
-                ModelCostData(
-                    provider="anthropic",
-                    model="claude-3-sonnet",
-                    input_cost_per_1k_tokens=0.003,
-                    output_cost_per_1k_tokens=0.015,
-                    thinking_cost_per_1k_tokens=0.006,
-                    source=default_source,
-                ),
-                ModelCostData(
-                    provider="anthropic",
-                    model="claude-3-haiku-20240307",
-                    input_cost_per_1k_tokens=0.00025,
-                    output_cost_per_1k_tokens=0.00125,
-                    thinking_cost_per_1k_tokens=0.0005,
-                    source=default_source,
-                ),
-            ]
+        # Fall back to embedded defaults if reading bundled data fails
+        default_source = RateSource(
+            name="Provider Documentation",
+            url="https://openai.com/pricing | https://anthropic.com/pricing",
+            access_date=datetime.now(),
+        )
 
-            for rate in fallback_rates:
-                self._rate_database[(rate.provider, rate.model)] = rate
+        fallback_rates = [
+            ModelCostData(
+                provider="openai",
+                model="gpt-4",
+                input_cost_per_1k_tokens=0.03,
+                output_cost_per_1k_tokens=0.06,
+                source=default_source,
+            ),
+            ModelCostData(
+                provider="openai",
+                model="gpt-3.5-turbo",
+                input_cost_per_1k_tokens=0.0015,
+                output_cost_per_1k_tokens=0.002,
+                source=default_source,
+            ),
+            ModelCostData(
+                provider="openai",
+                model="gpt-4o-mini",
+                input_cost_per_1k_tokens=0.00015,
+                output_cost_per_1k_tokens=0.0006,
+                cached_cost_per_1k_tokens=0.000075,
+                source=default_source,
+            ),
+            ModelCostData(
+                provider="anthropic",
+                model="claude-3-sonnet",
+                input_cost_per_1k_tokens=0.003,
+                output_cost_per_1k_tokens=0.015,
+                thinking_cost_per_1k_tokens=0.006,
+                source=default_source,
+            ),
+            ModelCostData(
+                provider="anthropic",
+                model="claude-3-haiku-20240307",
+                input_cost_per_1k_tokens=0.00025,
+                output_cost_per_1k_tokens=0.00125,
+                thinking_cost_per_1k_tokens=0.0005,
+                source=default_source,
+            ),
+        ]
+
+        for rate in fallback_rates:
+            self._rate_database[(rate.provider, rate.model)] = rate
 
     def get_model_rates(self, provider: str, model: str) -> ModelCostData | None:
         """Get rate data for a specific provider and model.
