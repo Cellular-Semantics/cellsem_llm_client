@@ -7,6 +7,7 @@
 installation
 quickstart
 schema_enforcement
+cost_tracking
 contributing
 ```
 

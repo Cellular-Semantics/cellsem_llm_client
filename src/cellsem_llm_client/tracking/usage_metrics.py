@@ -69,6 +69,10 @@ class UsageMetrics(BaseModel):
     cost_source: Literal["api", "estimated"] = Field(
         description="Whether cost comes from API or estimation"
     )
+    rate_last_updated: datetime | None = Field(
+        default=None,
+        description="When the rate data used for cost estimation was last updated",
+    )
     provider: str = Field(description="LLM provider (e.g., 'openai', 'anthropic')")
     model: str = Field(
         description="Specific model used (e.g., 'gpt-4', 'claude-3-sonnet')"

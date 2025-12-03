@@ -35,6 +35,7 @@ class TestUsageMetrics:
         assert metrics.thinking_tokens is None
         assert metrics.actual_cost_usd is None
         assert metrics.estimated_cost_usd is None
+        assert metrics.rate_last_updated is None
 
     def test_usage_metrics_with_all_fields(self) -> None:
         """Test creating UsageMetrics with all optional fields populated."""
@@ -277,6 +278,7 @@ class TestUsageMetrics:
             "thinking_tokens": 10,
             "actual_cost_usd": 0.003,
             "estimated_cost_usd": 0.0035,
+            "rate_last_updated": None,
             "cost_source": "api",
             "provider": "openai",
             "model": "gpt-4",

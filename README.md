@@ -73,6 +73,7 @@ Quick links:
 - [Development Guidelines](docs/contributing.md)
 - [API Reference](docs/api/cellsem_llm_client/index.rst) (auto-generated)
 - [Schema Enforcement](docs/schema_enforcement.md)
+- [Cost Tracking](docs/cost_tracking.md)
 
 ## ✨ Current Features
 
@@ -93,7 +94,7 @@ STATUS - beta
 
 - ✅ **Real-time Cost Tracking**: Direct integration with OpenAI and Anthropic usage APIs (aggregate per-key)
 - ✅ **Token Usage Metrics**: Detailed tracking of input, output, cached, and thinking tokens
-- ✅ **Cost Calculation**: Automated cost computation with fallback rate database (per-request precision)
+- ✅ **Cost Calculation**: Automated cost computation with fallback rate database (per-request precision); enabled by default when `track_usage=True` (opt-out available)
 - ✅ **Usage Analytics**: Comprehensive reporting and cost optimization insights
 
 ### JSON Schema Compliance
