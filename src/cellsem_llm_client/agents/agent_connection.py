@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
 from litellm import completion
 from pydantic import BaseModel
@@ -18,6 +18,7 @@ from cellsem_llm_client.schema import (
     SchemaManager,
     SchemaValidator,
 )
+from cellsem_llm_client.tracking.cost_calculator import FallbackCostCalculator
 from cellsem_llm_client.tracking.usage_metrics import UsageMetrics
 
 
@@ -30,9 +31,6 @@ class QueryResult:
     usage: UsageMetrics | None = None
     raw_response: Any | None = None
 
-
-if TYPE_CHECKING:
-    from cellsem_llm_client.tracking.cost_calculator import FallbackCostCalculator
 
 
 class AgentConnection(ABC):
@@ -159,6 +157,7 @@ class LiteLLMAgent(AgentConnection):
         track_usage: bool = False,
         cost_calculator: Optional["FallbackCostCalculator"] = None,
         max_retries: int = 2,
+        auto_cost: bool = True,
     ) -> QueryResult:
         """Unified query interface with optional tools, schema enforcement, and tracking.
 
@@ -177,6 +176,8 @@ class LiteLLMAgent(AgentConnection):
             track_usage: Whether to return usage metrics.
             cost_calculator: Optional cost calculator for estimated cost.
             max_retries: Validation retry limit when `schema` is provided.
+            auto_cost: When True, auto-create a fallback cost calculator if none is provided
+                and tracking is enabled.
 
         Returns:
             QueryResult containing final text, optional validated Pydantic model,
@@ -264,19 +265,22 @@ class LiteLLMAgent(AgentConnection):
 
         usage_metrics: UsageMetrics | None = None
         if track_usage and raw_response is not None and hasattr(raw_response, "usage"):
+            calc = cost_calculator
+            if calc is None and auto_cost:
+                calc = self._build_default_calculator()
             # When tools were used, accumulate usage from all API calls
             if all_tool_responses is not None:
                 usage_metrics = self._accumulate_usage_metrics(
                     responses=all_tool_responses,
                     provider=provider,
-                    cost_calculator=cost_calculator,
+                    cost_calculator=calc,
                 )
             else:
                 # Single API call without tools
                 usage_metrics = self._build_usage_metrics(
                     raw_response=raw_response,
                     provider=provider,
-                    cost_calculator=cost_calculator,
+                    cost_calculator=calc,
                 )
 
         return QueryResult(
@@ -568,6 +572,12 @@ class LiteLLMAgent(AgentConnection):
                             if isinstance(item, dict):
                                 self._ensure_no_additional_properties(item)
 
+    def _build_default_calculator(self) -> "FallbackCostCalculator":
+        """Create a fallback calculator with default rates loaded."""
+        calculator = FallbackCostCalculator()
+        calculator.load_default_rates()
+        return calculator
+
     def _run_tool_loop(
         self,
         messages: list[dict[str, Any]],
@@ -670,8 +680,18 @@ class LiteLLMAgent(AgentConnection):
         thinking_tokens = None
 
         estimated_cost_usd = None
+        rate_last_updated = None
         if cost_calculator:
             try:
+                get_rates = getattr(cost_calculator, "get_model_rates", None)
+                rate_data = (
+                    get_rates(provider, self.model) if callable(get_rates) else None
+                )
+                if rate_data and hasattr(rate_data, "source"):
+                    access_date = getattr(rate_data.source, "access_date", None)
+                    rate_last_updated = (
+                        access_date if isinstance(access_date, datetime) else None
+                    )
                 temp_usage_metrics = UsageMetrics(
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
@@ -694,6 +714,7 @@ class LiteLLMAgent(AgentConnection):
             cached_tokens=cached_tokens,
             thinking_tokens=thinking_tokens,
             estimated_cost_usd=estimated_cost_usd,
+            rate_last_updated=rate_last_updated,
             provider=provider,
             model=self.model,
             timestamp=datetime.now(),
@@ -750,8 +771,18 @@ class LiteLLMAgent(AgentConnection):
 
         # Calculate cost based on accumulated tokens
         estimated_cost_usd = None
+        rate_last_updated = None
         if cost_calculator:
             try:
+                get_rates = getattr(cost_calculator, "get_model_rates", None)
+                rate_data = (
+                    get_rates(provider, self.model) if callable(get_rates) else None
+                )
+                if rate_data and hasattr(rate_data, "source"):
+                    access_date = getattr(rate_data.source, "access_date", None)
+                    rate_last_updated = (
+                        access_date if isinstance(access_date, datetime) else None
+                    )
                 temp_usage_metrics = UsageMetrics(
                     input_tokens=total_input_tokens,
                     output_tokens=total_output_tokens,
@@ -774,6 +805,7 @@ class LiteLLMAgent(AgentConnection):
             cached_tokens=cached_tokens,
             thinking_tokens=thinking_tokens,
             estimated_cost_usd=estimated_cost_usd,
+            rate_last_updated=rate_last_updated,
             provider=provider,
             model=self.model,
             timestamp=datetime.now(),
