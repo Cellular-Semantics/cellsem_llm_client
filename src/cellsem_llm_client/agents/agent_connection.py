@@ -32,7 +32,6 @@ class QueryResult:
     raw_response: Any | None = None
 
 
-
 class AgentConnection(ABC):
     """Abstract base class for LLM agent connections."""
 
