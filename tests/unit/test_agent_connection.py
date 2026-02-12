@@ -15,6 +15,7 @@ from cellsem_llm_client.agents.agent_connection import (
     LiteLLMAgent,
     OpenAIAgent,
 )
+from cellsem_llm_client.tools.tool import Tool
 from cellsem_llm_client.tracking.usage_metrics import UsageMetrics
 
 
@@ -667,3 +668,223 @@ class TestAnthropicAgent:
         """Test that AnthropicAgent is a subclass of LiteLLMAgent."""
         agent = AnthropicAgent(api_key="test-key")
         assert isinstance(agent, LiteLLMAgent)
+
+
+class TestResolveTools:
+    """Tests for _resolve_tools normalisation method."""
+
+    @pytest.mark.unit
+    def test_resolve_tools_none(self) -> None:
+        """None input returns (None, {})."""
+        agent = LiteLLMAgent(model="gpt-3.5-turbo", api_key="test-key")
+        schemas, handlers = agent._resolve_tools(None, None)
+        assert schemas is None
+        assert handlers == {}
+
+    @pytest.mark.unit
+    def test_resolve_tools_with_tool_objects(self) -> None:
+        """Tool objects are converted to LiteLLM dicts + handler map."""
+
+        def handler_a(args: dict[str, Any]) -> str:
+            return "a"
+
+        def handler_b(args: dict[str, Any]) -> str:
+            return "b"
+
+        tools = [
+            Tool(
+                name="tool_a",
+                description="A",
+                parameters={"type": "object", "properties": {}},
+                handler=handler_a,
+            ),
+            Tool(
+                name="tool_b",
+                description="B",
+                parameters={"type": "object", "properties": {}},
+                handler=handler_b,
+            ),
+        ]
+
+        agent = LiteLLMAgent(model="gpt-3.5-turbo", api_key="test-key")
+        schemas, handlers = agent._resolve_tools(tools, None)
+
+        assert schemas is not None
+        assert len(schemas) == 2
+        assert schemas[0]["function"]["name"] == "tool_a"
+        assert schemas[1]["function"]["name"] == "tool_b"
+        assert handlers["tool_a"] is handler_a
+        assert handlers["tool_b"] is handler_b
+
+    @pytest.mark.unit
+    def test_resolve_tools_with_raw_dicts(self) -> None:
+        """Raw dicts pass through unchanged; explicit tool_handlers merged."""
+        raw = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "raw_tool",
+                    "description": "Raw",
+                    "parameters": {"type": "object"},
+                },
+            }
+        ]
+
+        def handler(args: dict[str, Any]) -> str:
+            return "raw"
+
+        agent = LiteLLMAgent(model="gpt-3.5-turbo", api_key="test-key")
+        schemas, handlers = agent._resolve_tools(raw, {"raw_tool": handler})
+
+        assert schemas == raw
+        assert handlers["raw_tool"] is handler
+
+    @pytest.mark.unit
+    def test_resolve_tools_mixed(self) -> None:
+        """Tool objects and raw dicts can be mixed in a single list."""
+
+        def handler_tool(args: dict[str, Any]) -> str:
+            return "tool"
+
+        def handler_raw(args: dict[str, Any]) -> str:
+            return "raw"
+
+        mixed: list[dict[str, Any] | Tool] = [
+            Tool(
+                name="tool_obj",
+                description="From Tool",
+                parameters={"type": "object"},
+                handler=handler_tool,
+            ),
+            {
+                "type": "function",
+                "function": {
+                    "name": "raw_dict",
+                    "description": "From dict",
+                    "parameters": {"type": "object"},
+                },
+            },
+        ]
+
+        agent = LiteLLMAgent(model="gpt-3.5-turbo", api_key="test-key")
+        schemas, handlers = agent._resolve_tools(mixed, {"raw_dict": handler_raw})
+
+        assert schemas is not None
+        assert len(schemas) == 2
+        assert schemas[0]["function"]["name"] == "tool_obj"
+        assert schemas[1]["function"]["name"] == "raw_dict"
+        assert handlers["tool_obj"] is handler_tool
+        assert handlers["raw_dict"] is handler_raw
+
+    @pytest.mark.unit
+    def test_resolve_tools_name_collision_raises(self) -> None:
+        """Duplicate tool names between Tool objects and tool_handlers raise ValueError."""
+
+        def handler(args: dict[str, Any]) -> str:
+            return "x"
+
+        tool = Tool(
+            name="dup_tool",
+            description="Duplicate",
+            parameters={"type": "object"},
+            handler=handler,
+        )
+
+        agent = LiteLLMAgent(model="gpt-3.5-turbo", api_key="test-key")
+
+        with pytest.raises(ValueError, match="dup_tool"):
+            agent._resolve_tools([tool], {"dup_tool": handler})
+
+
+class TestQueryUnifiedWithToolObjects:
+    """Tests for query_unified accepting Tool objects."""
+
+    @pytest.mark.unit
+    @patch("cellsem_llm_client.agents.agent_connection.completion")
+    def test_query_unified_with_tool_objects(self, mock_completion: Any) -> None:
+        """Full mock roundtrip with Tool objects passed to query_unified."""
+        tool_call = Mock()
+        tool_call.id = "call_1"
+        tool_call.type = "function"
+        tool_call.function = Mock()
+        tool_call.function.name = "my_tool"
+        tool_call.function.arguments = '{"q": "hello"}'
+
+        first_response = Mock()
+        first_response.choices = [Mock()]
+        first_response.choices[0].message.content = None
+        first_response.choices[0].message.tool_calls = [tool_call]
+
+        final_response = Mock()
+        final_response.choices = [Mock()]
+        final_response.choices[0].message.content = "Done."
+        final_response.choices[0].message.tool_calls = []
+
+        mock_completion.side_effect = [first_response, final_response]
+
+        executed: dict[str, Any] = {}
+
+        def handler(args: dict[str, Any]) -> str:
+            executed.update(args)
+            return "result"
+
+        tool = Tool(
+            name="my_tool",
+            description="A tool",
+            parameters={
+                "type": "object",
+                "properties": {"q": {"type": "string"}},
+            },
+            handler=handler,
+        )
+
+        agent = LiteLLMAgent(model="gpt-3.5-turbo", api_key="test-key")
+        result = agent.query_unified(message="Do stuff", tools=[tool])
+
+        assert result.text == "Done."
+        assert executed == {"q": "hello"}
+
+    @pytest.mark.unit
+    @patch("cellsem_llm_client.agents.agent_connection.completion")
+    def test_query_unified_backward_compat_raw_dicts(
+        self, mock_completion: Any
+    ) -> None:
+        """Existing raw-dict tool pattern still works unchanged."""
+        tool_call = Mock()
+        tool_call.id = "call_1"
+        tool_call.type = "function"
+        tool_call.function = Mock()
+        tool_call.function.name = "old_tool"
+        tool_call.function.arguments = "{}"
+
+        first_response = Mock()
+        first_response.choices = [Mock()]
+        first_response.choices[0].message.content = None
+        first_response.choices[0].message.tool_calls = [tool_call]
+
+        final_response = Mock()
+        final_response.choices = [Mock()]
+        final_response.choices[0].message.content = "Old way works."
+        final_response.choices[0].message.tool_calls = []
+
+        mock_completion.side_effect = [first_response, final_response]
+
+        raw_tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "old_tool",
+                    "description": "Legacy",
+                    "parameters": {"type": "object"},
+                },
+            }
+        ]
+
+        agent = LiteLLMAgent(model="gpt-3.5-turbo", api_key="test-key")
+        result = agent.query_unified(
+            message="Use old tool",
+            tools=raw_tools,
+            tool_handlers={"old_tool": lambda args: "legacy_result"},
+        )
+
+        assert result.text == "Old way works."

@@ -4,7 +4,7 @@ import json
 import logging
 import warnings
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional
@@ -18,6 +18,7 @@ from cellsem_llm_client.schema import (
     SchemaManager,
     SchemaValidator,
 )
+from cellsem_llm_client.tools.tool import Tool
 from cellsem_llm_client.tracking.cost_calculator import FallbackCostCalculator
 from cellsem_llm_client.tracking.usage_metrics import UsageMetrics
 
@@ -145,12 +146,55 @@ class LiteLLMAgent(AgentConnection):
         self._schema_validator = SchemaValidator()
         self._adapter_factory = SchemaAdapterFactory()
 
+    def _resolve_tools(
+        self,
+        tools: Sequence[dict[str, Any] | Tool] | None,
+        tool_handlers: dict[str, Callable[[dict[str, Any]], str | None]] | None,
+    ) -> tuple[
+        list[dict[str, Any]] | None, dict[str, Callable[[dict[str, Any]], str | None]]
+    ]:
+        """Normalise a mixed list of Tool objects and raw dicts.
+
+        Args:
+            tools: Tool objects and/or raw LiteLLM tool dicts (or None).
+            tool_handlers: Explicit handler map for raw-dict tools.
+
+        Returns:
+            A tuple of (litellm_schemas, handler_map). Schemas is None when
+            *tools* is None or empty.
+
+        Raises:
+            ValueError: If a Tool object's name collides with a key in
+                *tool_handlers*.
+        """
+        if not tools:
+            return None, tool_handlers or {}
+
+        schemas: list[dict[str, Any]] = []
+        handlers: dict[str, Callable[[dict[str, Any]], str | None]] = dict(
+            tool_handlers or {}
+        )
+
+        for entry in tools:
+            if isinstance(entry, Tool):
+                if entry.name in handlers:
+                    raise ValueError(
+                        f"Duplicate tool name '{entry.name}': appears both as a Tool "
+                        "object and in tool_handlers."
+                    )
+                schemas.append(entry.to_litellm_schema())
+                handlers[entry.name] = entry.handler
+            else:
+                schemas.append(entry)
+
+        return schemas, handlers
+
     def query_unified(
         self,
         message: str,
         system_message: str | None = None,
         schema: dict[str, Any] | type[BaseModel] | str | None = None,
-        tools: list[dict[str, Any]] | None = None,
+        tools: Sequence[dict[str, Any] | Tool] | None = None,
         tool_handlers: dict[str, Callable[[dict[str, Any]], str | None]] | None = None,
         max_turns: int = 5,
         track_usage: bool = False,
@@ -169,8 +213,8 @@ class LiteLLMAgent(AgentConnection):
             schema: JSON Schema dict, Pydantic model class, or schema name for
                 enforcement + validation. If provided with tools, validation runs
                 on the final assistant message after tool calls finish.
-            tools: LiteLLM tool definitions. Enables tool-call loop.
-            tool_handlers: Mapping of tool names to callables for execution.
+            tools: Tool objects and/or raw LiteLLM tool dicts. Enables tool-call loop.
+            tool_handlers: Mapping of tool names to callables for raw-dict tools.
             max_turns: Max tool-call iterations before giving up.
             track_usage: Whether to return usage metrics.
             cost_calculator: Optional cost calculator for estimated cost.
@@ -184,9 +228,11 @@ class LiteLLMAgent(AgentConnection):
 
         Raises:
             SchemaValidationException: If schema validation fails after retries.
-            ValueError: For missing tool handlers or argument parsing failures.
+            ValueError: For missing tool handlers, duplicate names, or argument parsing failures.
             RuntimeError: If tool loop exceeds `max_turns`.
         """
+        resolved_schemas, resolved_handlers = self._resolve_tools(tools, tool_handlers)
+
         messages: list[dict[str, Any]] = []
         if system_message:
             messages.append({"role": "system", "content": system_message})
@@ -204,11 +250,11 @@ class LiteLLMAgent(AgentConnection):
         response_content: str | None = None
         all_tool_responses: list[Any] | None = None
 
-        if tools:
+        if resolved_schemas:
             response_content, raw_response, all_tool_responses = self._run_tool_loop(
                 messages=messages,
-                tools=tools,
-                tool_handlers=tool_handlers or {},
+                tools=resolved_schemas,
+                tool_handlers=resolved_handlers,
                 max_turns=max_turns,
             )
         elif schema_dict is not None:
