@@ -104,6 +104,11 @@ For each feature:
 
 Each proposed plan of work should include an MVP and a critique section detailing potential issues/risks with the approach.
 
+## Build vs Reuse
+- **Always check existing dependencies first.** Before building new functionality, check whether libraries already in `pyproject.toml` (e.g. LiteLLM, Pydantic) provide the capability — or a foundation for it — natively.
+- **Search for widely-used third-party solutions** before designing custom implementations. Prefer well-maintained libraries over hand-rolled code for non-trivial infrastructure (protocol clients, format conversions, transport layers, etc.).
+- **Wrap, don't rewrite.** When integrating external libraries, write thin wrappers that add project-specific ergonomics. This delegates maintenance of complex/evolving functionality (new transports, format changes, bug fixes) to upstream maintainers.
+
 # Project Aim
 
 - LLM client implemented using LiteLLM + Pydantic-AI

@@ -15,7 +15,7 @@ from .exceptions import (
 )
 
 # Tool helpers
-from .tools import build_ols4_search_tool
+from .tools import MCPToolSource, Tool, build_ols4_search_tool, unpack_tools
 
 # Configuration utilities
 from .utils import (
@@ -34,6 +34,9 @@ __all__ = [
     "OpenAIAgent",
     "AnthropicAgent",
     "build_ols4_search_tool",
+    "MCPToolSource",
+    "Tool",
+    "unpack_tools",
     "load_environment",
     "create_openai_agent",
     "create_anthropic_agent",
