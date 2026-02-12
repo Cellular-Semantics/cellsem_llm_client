@@ -9,6 +9,30 @@ from cellsem_llm_client.tools.mcp_source import MCPToolSource
 from cellsem_llm_client.tools.tool import Tool
 
 
+class TestExperimentalImport:
+    """Test that the experimental LiteLLM import is available and stable."""
+
+    @pytest.mark.unit
+    def test_experimental_mcp_client_import(self) -> None:
+        """Verify that experimental_mcp_client.load_mcp_tools can be imported.
+
+        This test validates that our pinned LiteLLM version includes the
+        experimental API. If this test fails, it indicates that the LiteLLM
+        version may have changed or the experimental API has been removed/renamed.
+        """
+        try:
+            from litellm.experimental_mcp_client import load_mcp_tools
+
+            # Verify it's callable
+            assert callable(load_mcp_tools)
+        except ImportError as e:
+            pytest.fail(
+                f"Failed to import experimental_mcp_client.load_mcp_tools: {e}. "
+                "This may indicate a breaking change in LiteLLM. Check if the API "
+                "has been promoted to stable or moved to a different module."
+            )
+
+
 def _make_openai_tool(
     name: str, description: str, params: dict[str, Any]
 ) -> dict[str, Any]:

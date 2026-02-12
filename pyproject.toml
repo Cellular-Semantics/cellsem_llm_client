@@ -21,7 +21,7 @@ classifiers = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "litellm>=1.0.0",
+    "litellm>=1.79.1,<2.0.0",
     "mcp>=1.0.0",
     "openai>=2.15.0",
     "openai-agents>=0.6.5",

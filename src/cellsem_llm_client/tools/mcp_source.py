@@ -3,6 +3,18 @@
 Provides ``MCPToolSource``, a sync context manager that connects to an MCP server,
 discovers available tools, and wraps them as ``Tool`` objects whose handlers dispatch
 calls back to the MCP session running in a background thread.
+
+.. warning::
+    **Experimental API Dependency**
+
+    This module uses ``litellm.experimental_mcp_client.load_mcp_tools``, which is
+    an experimental API that may change or be removed without notice in future
+    LiteLLM versions. The project pins LiteLLM to version range ``>=1.79.1,<2.0.0``
+    to ensure stability.
+
+    **For Future Maintainers**: Check if ``load_mcp_tools`` has been promoted to a
+    stable API in newer LiteLLM versions. If so, consider upgrading the import path
+    to the stable location and expanding the version range accordingly.
 """
 
 from __future__ import annotations
