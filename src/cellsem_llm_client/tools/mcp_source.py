@@ -11,6 +11,7 @@ import asyncio
 import concurrent.futures
 import json
 import logging
+import shlex
 import threading
 from collections.abc import Callable
 from typing import Any
@@ -37,6 +38,9 @@ class MCPToolSource:
         server: URL for SSE/streamable-HTTP servers, or command/path for stdio servers.
         transport: Transport type (``"auto"``, ``"sse"``, ``"stdio"``,
             ``"streamable_http"``). ``"auto"`` infers from *server*.
+        connect_timeout: Seconds to wait for the MCP session to initialise.
+        cleanup_timeout: Seconds to wait for the background thread to join on exit.
+        tool_timeout: Seconds to wait for an individual tool call to return.
         **kwargs: Extra keyword arguments forwarded to the transport client
             (e.g. ``headers``, ``timeout``).
 
@@ -50,10 +54,16 @@ class MCPToolSource:
         self,
         server: str,
         transport: str = "auto",
+        connect_timeout: float = 60.0,
+        cleanup_timeout: float = 15.0,
+        tool_timeout: float = 120.0,
         **kwargs: Any,
     ) -> None:
         self._server = server
         self._transport = transport
+        self._connect_timeout = connect_timeout
+        self._cleanup_timeout = cleanup_timeout
+        self._tool_timeout = tool_timeout
         self._kwargs = kwargs
 
         self._tools: list[Tool] = []
@@ -94,18 +104,28 @@ class MCPToolSource:
         self._thread.start()
 
         # Wait for the background loop to finish connecting
-        self._ready.wait(timeout=60)
+        self._ready.wait(timeout=self._connect_timeout)
+
         if self._error is not None:
+            self.__exit__(None, None, None)
             raise RuntimeError(
                 f"MCPToolSource failed to connect to {self._server}"
             ) from self._error
+
+        if not self._ready.is_set():
+            self.__exit__(None, None, None)
+            raise TimeoutError(
+                f"MCPToolSource connection to {self._server} timed out "
+                f"after {self._connect_timeout}s"
+            )
+
         return self
 
     def __exit__(self, *exc: Any) -> None:
         if self._loop is not None and not self._loop.is_closed():
             self._loop.call_soon_threadsafe(self._shutdown.set)
         if self._thread is not None:
-            self._thread.join(timeout=15)
+            self._thread.join(timeout=self._cleanup_timeout)
         if self._loop is not None and not self._loop.is_closed():
             self._loop.close()
         self._loop = None
@@ -171,7 +191,7 @@ class MCPToolSource:
 
     async def _lifecycle_stdio(self) -> None:
         """Stdio transport lifecycle."""
-        parts = self._server.split()
+        parts = shlex.split(self._server)
         params = StdioServerParameters(command=parts[0], args=parts[1:])
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as session:
@@ -213,6 +233,7 @@ class MCPToolSource:
 
     def _make_handler(self, tool_name: str) -> Callable[[dict[str, Any]], str | None]:
         """Build a sync handler that dispatches to ``session.call_tool``."""
+        tool_timeout = self._tool_timeout
 
         def handler(args: dict[str, Any]) -> str | None:
             if self._session is None or self._loop is None or self._loop.is_closed():
@@ -236,6 +257,6 @@ class MCPToolSource:
                     future.set_exception(exc)
 
             self._loop.call_soon_threadsafe(asyncio.ensure_future, _call())
-            return future.result(timeout=120)
+            return future.result(timeout=tool_timeout)
 
         return handler

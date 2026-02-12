@@ -256,3 +256,81 @@ class TestMCPToolSourceSchemaMapping:
             # Verify round-trip: to_litellm_schema should reconstruct the original
             schema = tool.to_litellm_schema()
             assert schema["function"]["parameters"] == complex_params
+
+
+class TestMCPToolSourceErrorScenarios:
+    """Test error handling in MCPToolSource."""
+
+    @pytest.mark.unit
+    @patch("cellsem_llm_client.tools.mcp_source.sse_client")
+    def test_connection_failure_cleans_up(self, mock_sse: Any) -> None:
+        """Connection failure should raise RuntimeError and clean up resources."""
+        mock_transport_cm = AsyncMock()
+        mock_transport_cm.__aenter__.side_effect = ConnectionError("refused")
+        mock_sse.return_value = mock_transport_cm
+
+        with pytest.raises(RuntimeError, match="failed to connect"):
+            with MCPToolSource("https://bad.example.com/mcp"):
+                pass  # pragma: no cover
+
+    @pytest.mark.unit
+    @patch("cellsem_llm_client.tools.mcp_source.load_mcp_tools")
+    @patch("cellsem_llm_client.tools.mcp_source.ClientSession")
+    @patch("cellsem_llm_client.tools.mcp_source.sse_client")
+    def test_tool_execution_failure_propagates(
+        self,
+        mock_sse: Any,
+        mock_session_cls: Any,
+        mock_load: Any,
+    ) -> None:
+        """Tool handler should propagate exceptions from session.call_tool."""
+        mock_load.return_value = [
+            _make_openai_tool(
+                "failing_tool",
+                "Fails",
+                {"type": "object", "properties": {}},
+            ),
+        ]
+
+        mock_read = MagicMock()
+        mock_write = MagicMock()
+        mock_transport_cm = AsyncMock()
+        mock_transport_cm.__aenter__.return_value = (mock_read, mock_write)
+        mock_sse.return_value = mock_transport_cm
+
+        mock_session = AsyncMock()
+        mock_session.initialize = AsyncMock()
+        mock_session.call_tool = AsyncMock(side_effect=RuntimeError("tool exploded"))
+        mock_session_cm = AsyncMock()
+        mock_session_cm.__aenter__.return_value = mock_session
+        mock_session_cls.return_value = mock_session_cm
+
+        with MCPToolSource("https://example.com/mcp") as source:
+            tool = source.tools[0]
+            with pytest.raises(RuntimeError, match="tool exploded"):
+                tool.handler({})
+
+    @pytest.mark.unit
+    def test_handler_raises_when_session_inactive(self) -> None:
+        """Calling a handler after exit should raise RuntimeError."""
+        source = MCPToolSource.__new__(MCPToolSource)
+        source._session = None
+        source._loop = None
+        source._tool_timeout = 120.0
+
+        handler = source._make_handler("test_tool")
+        with pytest.raises(RuntimeError, match="not active"):
+            handler({})
+
+    @pytest.mark.unit
+    def test_configurable_timeouts(self) -> None:
+        """Constructor should accept and store custom timeout values."""
+        source = MCPToolSource(
+            "https://example.com/mcp",
+            connect_timeout=10.0,
+            cleanup_timeout=5.0,
+            tool_timeout=30.0,
+        )
+        assert source._connect_timeout == 10.0
+        assert source._cleanup_timeout == 5.0
+        assert source._tool_timeout == 30.0
