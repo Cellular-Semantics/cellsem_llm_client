@@ -32,7 +32,8 @@
 ## Upcoming / Planned
 
 ### Cyberian Integration (experimental, high priority)
-Replace direct LLM API calls with local agent execution via agentapi/cyberian.
+Replace direct LLM API calls with local agent execution via agentapi/cyberian.\
+Precedent - see implementation in https://github.com/monarch-initiative/deep-research-client
 
 **Use Case**: Run queries through local CLI agents (Claude Code, Aider, etc.) instead of direct API calls, enabling access to agent-specific capabilities (file operations, tool use, etc.) within the library's unified interface.
 
