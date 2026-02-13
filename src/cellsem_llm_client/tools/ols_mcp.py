@@ -2,8 +2,14 @@
 
 This module exposes a helper that builds a LiteLLM-compatible tool definition plus
 an executable handler for searching the OLS4 ontology service.
+
+.. deprecated:: 0.3.0
+   The OLS4 tool helper is deprecated and provided only as a reference example.
+   Downstream users should implement ontology search tools appropriate to their
+   specific project requirements using the generic Tool abstraction.
 """
 
+import warnings
 from collections.abc import Callable
 from typing import Any
 
@@ -20,6 +26,11 @@ def build_ols4_search_tool(
 ) -> tuple[list[dict[str, Any]], dict[str, Callable[[dict[str, Any]], str]]]:
     """Build the OLS4 search tool definition and handler.
 
+    .. deprecated:: 0.3.0
+       This helper is provided only as a reference example. Downstream users
+       should implement ontology search tools appropriate to their specific
+       project requirements using the generic Tool abstraction.
+
     Args:
         base_url: Base URL for the OLS4 search endpoint.
         default_rows: Default number of rows to request when not specified.
@@ -28,6 +39,13 @@ def build_ols4_search_tool(
     Returns:
         A tuple of (tools_list, handlers_map) suitable for ``query_with_tools``.
     """
+    warnings.warn(
+        "build_ols4_search_tool is deprecated and provided only as a reference "
+        "example. Downstream users should implement ontology search tools "
+        "appropriate to their specific project requirements.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     tools = [
         {
             "type": "function",

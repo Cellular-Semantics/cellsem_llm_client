@@ -114,8 +114,6 @@ STATUS - alpha
 - ✅ **Generic Tool Abstraction**: Uniform `Tool` dataclass for defining tools with JSON-schema parameters and Python handlers
 - ✅ **LiteLLM Tool Loop**: `LiteLLMAgent.query_with_tools` and `query_unified` execute tool calls and resume the conversation automatically
 - ✅ **MCP Tool Discovery**: `MCPToolSource` discovers tools from any MCP server (stdio transport), bridging the async MCP SDK to sync callers via a background thread
-- ✅ **OLS4 Ontology Search**: Built-in `ols4_search` helper targeting the EBI OLS4 MCP (with legacy REST fallback) for ontology lookups
-- ✅ **Integration Coverage**: Live test hits OLS4 for "Bergmann glial cell" to verify real responses
 
 ### Schema Enforcement (JSON-first)
 
@@ -201,7 +199,7 @@ See [`planning/ROADMAP.md`](planning/ROADMAP.md) for detailed implementation pla
 - **Integration Tests**: Real API validation in local development — require API keys
 - **Coverage**: >90% code coverage maintained across all modules
 
-### Development Workflow
+t### Development Workflow
 
 ```bash
 # Run tests

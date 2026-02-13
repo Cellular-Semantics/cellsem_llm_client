@@ -24,8 +24,6 @@
 - Generic `Tool` abstraction (`tools/tool.py`) for uniform tool definitions
 - `LiteLLMAgent.query_with_tools` / `query_unified` — LiteLLM tool loop with automatic tool execution
 - `MCPToolSource` — discovers tools from any MCP server via stdio, bridging async MCP SDK to sync callers
-- Built-in `ols4_search` helper for EBI OLS4 ontology lookups (MCP with legacy fallback)
-- Live integration test coverage against OLS4
 
 ---
 
@@ -39,6 +37,7 @@ Add async variants of agent methods to unblock async callers and simplify MCP in
 - Full backward compatibility — existing sync API unchanged
 - Requires `pytest-asyncio` for new async tests
 - See: [async-support-analysis.md](async-support-analysis.md)
+- Downstream guidance: [async-downstream-guidance.md](async-downstream-guidance.md) (to publish to template repo when ready)
 
 ### File Attachment Support
 Multi-format file inputs (images, PDFs, documents) via LiteLLM file APIs.
