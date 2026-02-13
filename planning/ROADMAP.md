@@ -29,6 +29,39 @@
 
 ## Upcoming / Planned
 
+### Cyberian Integration (experimental, high priority)
+Replace direct LLM API calls with local agent execution via agentapi/cyberian.\
+Precedent - see implementation in https://github.com/monarch-initiative/deep-research-client
+
+**Use Case**: Run queries through local CLI agents (Claude Code, Aider, etc.) instead of direct API calls, enabling access to agent-specific capabilities (file operations, tool use, etc.) within the library's unified interface.
+
+**Key Differences from Deep-Research Pattern**:
+- Simple query execution, not iterative research workflows
+- Fast execution comparable to API calls (not 10-30 minute deep-research loops)
+- Drop-in replacement for standard `query()` / `query_unified()` methods
+
+**Implementation Approach**:
+- Optional execution mode: `agent.query(..., via_cyberian=True, agent_type="claude")`
+- Wraps agentapi HTTP API for communication with local agent servers
+- Maps LLM responses from agent terminal output
+- Maintains full compatibility with existing features (schema enforcement, tool calling, cost tracking)
+
+**Benefits**:
+- Leverage agent capabilities beyond raw LLM APIs (code execution, file operations, extended tool ecosystems)
+- Test workflows locally before deploying to production API endpoints
+- Enable hybrid local/cloud execution patterns
+
+**Requirements**:
+- Local CLI agents installed (Claude Code, Aider, etc.)
+- agentapi server running (or managed by library)
+- `pip install cellsem-llm-client[cyberian]` for optional dependencies
+
+**Considerations**:
+- Adds dependency on external CLI tools and agentapi
+- Requires process/server lifecycle management
+- Terminal output parsing may be less reliable than structured API responses
+- Limited to agents with CLI interfaces
+
 ### Async Support
 Add async variants of agent methods to unblock async callers and simplify MCP internals.
 
