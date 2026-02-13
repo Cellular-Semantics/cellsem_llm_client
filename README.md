@@ -199,7 +199,7 @@ See [`planning/ROADMAP.md`](planning/ROADMAP.md) for detailed implementation pla
 - **Integration Tests**: Real API validation in local development — require API keys
 - **Coverage**: >90% code coverage maintained across all modules
 
-t### Development Workflow
+### Development Workflow
 
 ```bash
 # Run tests
