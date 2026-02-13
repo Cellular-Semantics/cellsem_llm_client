@@ -107,14 +107,15 @@ STATUS - beta
 - ✅ **Cross-Provider Compatibility**: Unified schema interface across all providers
 - ✅ **JSON-First Inputs**: Prefer plain JSON Schema dicts; Pydantic models are optional helpers
 
-### Tool Calling & Ontology Search
+### Tool Calling & MCP Integration
 
 STATUS - alpha
 
-- ✅ **LiteLLM Tool Loop**: `LiteLLMAgent.query_with_tools` executes tool calls and resumes the conversation
-- ✅ **OLS4 MCP Tool**: Built-in `ols4_search` helper targeting the EBI OLS4 MCP (with legacy fallback) for ontology lookups
-- ✅ **Integration Coverage**: Live test hits OLS4 for “Bergmann glial cell” to verify real responses
-- ✅ **Composable**: Tool definitions + handlers returned together for easy plug-in to agents
+- ✅ **Generic Tool Abstraction**: Uniform `Tool` dataclass for defining tools with JSON-schema parameters and Python handlers
+- ✅ **LiteLLM Tool Loop**: `LiteLLMAgent.query_with_tools` and `query_unified` execute tool calls and resume the conversation automatically
+- ✅ **MCP Tool Discovery**: `MCPToolSource` discovers tools from any MCP server (stdio transport), bridging the async MCP SDK to sync callers via a background thread
+- ✅ **OLS4 Ontology Search**: Built-in `ols4_search` helper targeting the EBI OLS4 MCP (with legacy REST fallback) for ontology lookups
+- ✅ **Integration Coverage**: Live test hits OLS4 for "Bergmann glial cell" to verify real responses
 
 ### Schema Enforcement (JSON-first)
 
@@ -146,30 +147,36 @@ STATUS - beta
   print(result.model_dump())  # Pydantic model generated at runtime
   ```
 
-## Planned/Under developemnt
+## Planned / Under Development
 
-###  File Attachment Support
+See [`planning/ROADMAP.md`](planning/ROADMAP.md) for the full roadmap.
+
+### Async Support
+- ⏳ **Async Agent Methods**: `aquery()`, `aquery_unified()` wrapping `litellm.acompletion()`
+- ⏳ **Simplified MCP Bridge**: Collapse background-thread bridge to direct `await` calls
+- ⏳ **Full Backward Compatibility**: Existing sync API unchanged
+
+### File Attachment Support
 - ⏳ **Multi-Format Support**: Images (PNG, JPEG, WebP), PDFs, and documents
-- ⏳ **Provider Abstraction**: Unified file API across different LLM providers
-- ⏳ **Capability Detection**: Automatic model file support validation
-- ⏳ **Flexible Input**: Base64, URL, and file path support
+- ⏳ **Provider Capability Detection**: Automatic validation via `litellm.supports_pdf_input()`
+- ⏳ **Unified API**: `query_with_files()` method with base64, URL, and file-path inputs
 
 ### AI-Powered Model Recommendations
 - ⏳ **Task Complexity Analysis**: AI-powered prompt difficulty assessment
 - ⏳ **Model Selection**: Intelligent recommendations based on task requirements
 - ⏳ **Cost Optimization**: Balance performance and cost for optimal model choice
-- ⏳ **Token Estimation**: Predict token usage for better planning
 
 ## 🏗️ Architecture
 
 ```
 cellsem_llm_client/
 ├── agents/          # Core LLM agent implementations
+├── tools/           # Generic Tool abstraction and MCP tool discovery
 ├── utils/           # Configuration and helper utilities
-├── tracking/        # Token usage and cost monitoring 
-├── schema/          # JSON schema validation and compliance 
-├── files/           # File attachment processing (Stub)
-└── advisors/        # AI-powered model recommendations (Stub)
+├── tracking/        # Token usage and cost monitoring
+├── schema/          # JSON schema validation and compliance
+├── files/           # File attachment processing (stub)
+└── advisors/        # AI-powered model recommendations (stub)
 ```
 
 ## 📋 Requirements
@@ -190,9 +197,8 @@ See [`planning/ROADMAP.md`](planning/ROADMAP.md) for detailed implementation pla
 
 ### 🧪 Testing Strategy
 
-- **Unit Tests**: Fast, isolated tests with mocked dependencies
-- **Integration Tests**: Real API validation in development, controlled mocks in CI
-- **Environment-Based**: `USE_MOCKS=true` for CI, real APIs for local development
+- **Unit Tests**: Fast, isolated tests (no external dependencies) — run in CI
+- **Integration Tests**: Real API validation in local development — require API keys
 - **Coverage**: >90% code coverage maintained across all modules
 
 ### Development Workflow
