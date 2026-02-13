@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cellsem_llm_client"
-version = "0.21b0"
+version = "0.2.1b0"
 description = "LLM client implemented using LiteLLM + Pydantic-AI for seamless multi-provider support"
 readme = "README.md"
 license = {text = "MIT"}
