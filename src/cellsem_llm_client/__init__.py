@@ -3,7 +3,13 @@
 __version__ = "0.1.0"
 
 # Core agent classes
-from .agents import AgentConnection, AnthropicAgent, LiteLLMAgent, OpenAIAgent
+from .agents import (
+    AgentConnection,
+    AnthropicAgent,
+    CyberianAgent,
+    LiteLLMAgent,
+    OpenAIAgent,
+)
 
 # Custom exceptions
 from .exceptions import (
@@ -20,6 +26,7 @@ from .tools import MCPToolSource, Tool, build_ols4_search_tool, unpack_tools
 # Configuration utilities
 from .utils import (
     create_anthropic_agent,
+    create_cyberian_agent,
     create_litellm_agent,
     create_openai_agent,
     get_available_providers,
@@ -33,6 +40,7 @@ __all__ = [
     "LiteLLMAgent",
     "OpenAIAgent",
     "AnthropicAgent",
+    "CyberianAgent",
     "build_ols4_search_tool",
     "MCPToolSource",
     "Tool",
@@ -40,6 +48,7 @@ __all__ = [
     "load_environment",
     "create_openai_agent",
     "create_anthropic_agent",
+    "create_cyberian_agent",
     "create_litellm_agent",
     "get_available_providers",
     "get_default_models",
