@@ -62,6 +62,24 @@ Precedent - see implementation in https://github.com/monarch-initiative/deep-res
 - Terminal output parsing may be less reliable than structured API responses
 - Limited to agents with CLI interfaces
 
+#### Current Status Snapshot (as of February 16, 2026)
+
+**Implemented**:
+- Standard query path wired: `LiteLLMAgent.query()` / `query_unified()` can route Cyberian/Codex-style models through local `agentapi` instead of LiteLLM provider resolution.
+- Local agent lifecycle supported for this path via `provider_params` (managed server vs external server, agent type, port, timeout, workdir options).
+- Keyless initialization supported for Cyberian/Codex-style models in `create_litellm_agent(...)` and `LiteLLMAgent`.
+- Baseline test coverage added for Cyberian standard query routing and config behavior.
+- Separate workflow-based `CyberianAgent` (deep-research mode) remains available.
+
+**Missing / Incomplete**:
+- No explicit `via_cyberian=True` toggle yet; routing currently depends on model naming conventions.
+- Full feature parity is not complete for the standard Cyberian query path:
+  - Tool-calling compatibility is not implemented.
+  - Schema-enforced query parity is not fully implemented.
+  - Cost/token tracking is currently placeholder-level (no real usage accounting).
+- Packaging ergonomics target not done yet: no dedicated optional extra such as `cellsem-llm-client[cyberian]`.
+- End-to-end validation depends on local `agentapi` + enterprise CLI auth runtime and is environment-dependent.
+
 ### Async Support
 Add async variants of agent methods to unblock async callers and simplify MCP internals.
 
