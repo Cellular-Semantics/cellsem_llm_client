@@ -216,19 +216,25 @@ class SchemaManager:
             pass
 
     def _generate_model_from_schema(
-        self, schema_dict: dict[str, Any], model_name: str
+        self,
+        schema_dict: dict[str, Any],
+        model_name: str,
+        root_schema: dict[str, Any] | None = None,
     ) -> type[BaseModel]:
         """Generate a Pydantic model from a JSON schema.
+
+        Handles nested objects, typed arrays, and ``$ref``/``$defs`` resolution.
 
         Args:
             schema_dict: JSON schema dictionary
             model_name: Name for the generated model
+            root_schema: Root schema for resolving ``$ref``. Defaults to *schema_dict*.
 
         Returns:
             Generated Pydantic model class
         """
-        # For now, implement a simple version that handles basic cases
-        # This would be enhanced to handle complex schemas in production
+        if root_schema is None:
+            root_schema = schema_dict
 
         if schema_dict.get("type") != "object":
             # For non-object types, create a simple wrapper model
@@ -241,7 +247,10 @@ class SchemaManager:
         field_definitions: dict[str, Any] = {}
 
         for field_name, field_schema in properties.items():
-            field_type = self._json_type_to_python_type(field_schema)
+            resolved = self._resolve_ref(field_schema, root_schema)
+            field_type = self._json_type_to_python_type(
+                resolved, f"{model_name}_{field_name}", root_schema
+            )
 
             if field_name in required_fields:
                 field_definitions[field_name] = (field_type, ...)
@@ -251,31 +260,83 @@ class SchemaManager:
         # Create the model
         return create_model(model_name, **field_definitions)  # type: ignore[misc]
 
-    def _json_type_to_python_type(self, field_schema: dict[str, Any]) -> type[Any]:
+    def _resolve_ref(
+        self, schema: dict[str, Any], root_schema: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Resolve a ``$ref`` pointer against the root schema.
+
+        Only ``#/$defs/<Name>`` and ``#/definitions/<Name>`` are supported.
+
+        Args:
+            schema: Schema that may contain a ``$ref`` key.
+            root_schema: Root schema containing ``$defs``/``definitions``.
+
+        Returns:
+            Resolved schema dictionary.
+        """
+        ref = schema.get("$ref")
+        if ref is None:
+            return schema
+
+        # Support #/$defs/Name and #/definitions/Name
+        for defs_key in ("$defs", "definitions"):
+            prefix = f"#/{defs_key}/"
+            if ref.startswith(prefix):
+                def_name = ref[len(prefix) :]
+                defs = root_schema.get(defs_key, {})
+                if def_name in defs:
+                    return defs[def_name]
+
+        # Unresolvable ref – fall back to the original schema
+        return schema
+
+    def _json_type_to_python_type(
+        self,
+        field_schema: dict[str, Any],
+        context_name: str = "Field",
+        root_schema: dict[str, Any] | None = None,
+    ) -> type[Any]:
         """Convert JSON schema type to Python type.
+
+        Recursively handles nested objects and typed arrays.
 
         Args:
             field_schema: JSON schema field definition
+            context_name: Name context used when generating sub-models
+            root_schema: Root schema for ``$ref`` resolution
 
         Returns:
             Python type
         """
         json_type = field_schema.get("type", "string")
 
-        type_mapping = {
+        # --- nested object → generate a sub-model ---
+        if json_type == "object" and "properties" in field_schema:
+            return self._generate_model_from_schema(
+                field_schema, context_name, root_schema
+            )
+
+        # --- typed array → list[<item_type>] ---
+        if json_type == "array":
+            items_schema = field_schema.get("items")
+            if items_schema and isinstance(items_schema, dict):
+                resolved_items = self._resolve_ref(
+                    items_schema, root_schema or field_schema
+                )
+                item_type = self._json_type_to_python_type(
+                    resolved_items, f"{context_name}_item", root_schema
+                )
+                return list[item_type]  # type: ignore[valid-type]
+            # No items specified – bare list
+            return list
+
+        type_mapping: dict[str, type[Any]] = {
             "string": str,
             "integer": int,
             "number": float,
             "boolean": bool,
-            "array": list,
             "object": dict,
             "null": type(None),
         }
 
-        python_type = type_mapping.get(json_type, str)
-
-        # Handle optional fields by making them unions with None
-        if not field_schema.get("required", True):
-            return python_type | type(None)  # type: ignore[return-value]
-
-        return python_type
+        return type_mapping.get(json_type, str)

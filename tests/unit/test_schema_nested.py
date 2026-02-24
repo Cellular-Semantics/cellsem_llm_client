@@ -1,9 +1,6 @@
 """Unit tests for nested schema handling in SchemaManager._generate_model_from_schema."""
 
-import json
-
 import pytest
-from pydantic import BaseModel
 
 from cellsem_llm_client.schema.manager import SchemaManager
 
@@ -72,12 +69,12 @@ class TestNestedSchemaGeneration:
         assert instance.address.street == "123 Main St"
         assert instance.address.city == "Springfield"
 
-        # Regenerated schema should have nested properties
+        # Regenerated schema should reference a sub-model via $defs
         json_schema = model.model_json_schema()
-        # The address should reference a sub-model (via $defs) or inline properties
-        # Either way, it should NOT be a bare dict with no properties
-        assert "properties" not in json_schema["properties"]["address"] or (
-            "street" in json_schema["properties"]["address"]["properties"]
+        address_schema = json_schema["properties"]["address"]
+        # Pydantic generates a $ref to a $defs entry for the sub-model
+        assert "$ref" in address_schema, (
+            f"Expected address to reference a sub-model, got: {address_schema}"
         )
 
     def test_array_of_objects_produces_typed_items(self) -> None:
