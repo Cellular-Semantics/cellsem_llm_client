@@ -283,11 +283,17 @@ class SchemaManager:
             prefix = f"#/{defs_key}/"
             if ref.startswith(prefix):
                 def_name = ref[len(prefix) :]
-                defs = root_schema.get(defs_key, {})
+                defs = (root_schema or {}).get(defs_key, {})  # type: ignore[union-attr]
                 if def_name in defs:
                     return defs[def_name]
+                # We matched a supported prefix but could not resolve the name:
+                # treat this as a schema error instead of silently falling back.
+                raise SchemaValidationError(
+                    f"Failed to resolve $ref '{ref}': "
+                    f"'{def_name}' not found in '{defs_key}' of root schema."
+                )
 
-        # Unresolvable ref – fall back to the original schema
+        # Unresolvable or unsupported ref pattern – fall back to the original schema
         return schema
 
     def _json_type_to_python_type(
