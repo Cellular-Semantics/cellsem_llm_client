@@ -62,6 +62,7 @@ Precedent - see implementation in https://github.com/monarch-initiative/deep-res
 - Terminal output parsing may be less reliable than structured API responses
 - Limited to agents with CLI interfaces
 
+<<<<<<< cyberian-codex-integration
 #### Current Status Snapshot (as of February 16, 2026)
 
 **Implemented**:
@@ -79,6 +80,17 @@ Precedent - see implementation in https://github.com/monarch-initiative/deep-res
   - Cost/token tracking is currently placeholder-level (no real usage accounting).
 - Packaging ergonomics target not done yet: no dedicated optional extra such as `cellsem-llm-client[cyberian]`.
 - End-to-end validation depends on local `agentapi` + enterprise CLI auth runtime and is environment-dependent.
+=======
+### Local Retrieval Vector Store (planned)
+Reduce expansion-prompt token usage by reusing local embeddings and retrieving only relevant snippets instead of resending full publication text for each batch.
+
+- Chunks article text once, embeds locally, and persists reusable per-article indexes
+- Retrieves top-K semantically relevant snippets per annotation batch to shrink prompt context
+- Falls back to full-text context when retrieval is unavailable, preserving workflow reliability
+- Supports env/CLI configuration for enablement, embedding model, chunking, and retrieval depth
+- Emits prompt-size metrics (chars/tokens, where available) to verify context reduction impact
+- Primary value: lower expansion-phase input tokens and better scalability on long papers with many batches
+>>>>>>> main
 
 ### Async Support
 Add async variants of agent methods to unblock async callers and simplify MCP internals.
