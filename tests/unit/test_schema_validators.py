@@ -276,3 +276,41 @@ class TestSchemaValidator:
         assert result2.success is True
         assert result2.model_instance is not None
         assert result2.model_instance.optional_field is None
+
+    def test_retry_fix_keeps_nested_objects_structured(self) -> None:
+        """Nested string_type retry should not stringify parent objects."""
+
+        class NestedModel(BaseModel):
+            address: dict[str, str]
+
+        validator = SchemaValidator()
+        response_text = '{"address": {"street": 123}}'
+
+        result = validator.validate_with_retry(response_text, NestedModel, max_retries=1)
+
+        assert result.success is True
+        assert result.model_instance is not None
+        assert isinstance(result.model_instance.address, dict)
+        assert result.model_instance.address["street"] == "123"
+
+    def test_retry_parses_stringified_nested_objects(self) -> None:
+        """Retry should parse nested JSON strings for model_type errors."""
+
+        class ProfileModel(BaseModel):
+            user: dict[str, str]
+            address: dict[str, str]
+
+        validator = SchemaValidator()
+        response_text = json.dumps(
+            {
+                "user": '{"name":"Sarah Smith","email":"sarah@company.com"}',
+                "address": '{"city":"London","country":"UK"}',
+            }
+        )
+
+        result = validator.validate_with_retry(response_text, ProfileModel, max_retries=1)
+
+        assert result.success is True
+        assert result.model_instance is not None
+        assert result.model_instance.user["name"] == "Sarah Smith"
+        assert result.model_instance.address["city"] == "London"
