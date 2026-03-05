@@ -1,12 +1,15 @@
 """Agent connection classes for LLM interactions."""
 
+import importlib.util
 import json
 import logging
+import os
 import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Optional
 
 from litellm import completion
@@ -31,6 +34,27 @@ class QueryResult:
     model: BaseModel | None = None
     usage: UsageMetrics | None = None
     raw_response: Any | None = None
+
+
+@dataclass
+class _SimpleMessage:
+    """Minimal message object used for non-LiteLLM backends."""
+
+    content: str | None
+
+
+@dataclass
+class _SimpleChoice:
+    """Minimal choice object used for non-LiteLLM backends."""
+
+    message: _SimpleMessage
+
+
+@dataclass
+class _SimpleResponse:
+    """Minimal response object shape matching LiteLLM access patterns."""
+
+    choices: list[_SimpleChoice]
 
 
 class AgentConnection(ABC):
@@ -121,6 +145,7 @@ class LiteLLMAgent(AgentConnection):
         model: str,
         api_key: str | None = None,
         max_tokens: int = 1000,
+        completion_kwargs: dict[str, Any] | None = None,
     ):
         """Initialize the LiteLLM agent.
 
@@ -128,23 +153,115 @@ class LiteLLMAgent(AgentConnection):
             model: The model name (e.g., 'gpt-3.5-turbo', 'claude-3-haiku-20240307')
             api_key: The API key for authentication
             max_tokens: Maximum tokens for response (default: 1000)
+            completion_kwargs: Additional kwargs forwarded to LiteLLM completion.
 
         Raises:
             ValueError: If model or api_key is None
         """
         if model is None:
             raise ValueError("Model is required")
-        if api_key is None:
+        if api_key is None and not self._is_keyless_model(model):
             raise ValueError("API key is required")
 
         self.model = model
         self.api_key = api_key
         self.max_tokens = max_tokens
+        self.completion_kwargs = completion_kwargs or {}
 
         # Initialize schema components
         self._schema_manager = SchemaManager()
         self._schema_validator = SchemaValidator()
         self._adapter_factory = SchemaAdapterFactory()
+
+    @staticmethod
+    def _is_keyless_model(model: str) -> bool:
+        """Return True when model auth does not require an API key."""
+        model_lower = model.lower()
+        return any(token in model_lower for token in ("cyberian", "agentapi", "codex"))
+
+    @staticmethod
+    def _is_cyberian_model(model: str) -> bool:
+        """Return True if model should route through Cyberian agentapi."""
+        model_lower = model.lower()
+        return any(token in model_lower for token in ("cyberian", "agentapi", "codex"))
+
+    def _completion(self, **kwargs: Any) -> Any:
+        """Call LiteLLM completion with optional default kwargs."""
+        return completion(**self.completion_kwargs, **kwargs)
+
+    def _query_cyberian(self, message: str, system_message: str | None = None) -> Any:
+        """Run a standard query through Cyberian agentapi."""
+        if importlib.util.find_spec("cyberian") is None:
+            raise RuntimeError(
+                "Cyberian provider requested but package is not installed. "
+                "Install with `uv pip install cyberian`."
+            )
+
+        from cyberian.agent_client import (
+            get_agent_status,  # type: ignore[import-not-found, import-untyped]
+            send_message_and_wait,  # type: ignore[import-not-found, import-untyped]
+        )
+        from cyberian.runner import (
+            TaskRunner,  # type: ignore[import-not-found, import-untyped]
+        )
+
+        raw_params = self.completion_kwargs.get("provider_params", {})
+        params = raw_params if isinstance(raw_params, dict) else {}
+        host = str(params.get("host", "localhost"))
+        port = int(params.get("port", 3284))
+        timeout = int(params.get("timeout", 300))
+        agent_type = str(params.get("agent_type", "codex"))
+        manage_server = bool(params.get("manage_server", True))
+        skip_permissions = bool(params.get("skip_permissions", True))
+
+        directory = params.get("directory")
+        workdir_base = params.get("workdir_base")
+        if directory is None and workdir_base is not None:
+            Path(str(workdir_base)).mkdir(parents=True, exist_ok=True)
+            directory = str(workdir_base)
+        if directory is None:
+            directory = os.getcwd()
+
+        payload = (
+            f"System instructions:\n{system_message}\n\nUser request:\n{message}"
+            if system_message
+            else message
+        )
+
+        runner = TaskRunner(
+            host=host,
+            port=port,
+            timeout=timeout,
+            lifecycle_mode="reuse",
+            agent_type=agent_type,
+            skip_permissions=skip_permissions,
+            directory=directory,
+        )
+
+        if manage_server:
+            runner._start_server()
+            try:
+                response_text = send_message_and_wait(
+                    port=port,
+                    content=payload,
+                    host=host,
+                    timeout=timeout,
+                )
+            finally:
+                runner._stop_server()
+        else:
+            # Avoid TaskRunner's codex-specific long startup wait for external mode.
+            get_agent_status(port=port, host=host, timeout=min(5.0, float(timeout)))
+            response_text = send_message_and_wait(
+                port=port,
+                content=payload,
+                host=host,
+                timeout=timeout,
+            )
+
+        return _SimpleResponse(
+            choices=[_SimpleChoice(message=_SimpleMessage(response_text))]
+        )
 
     def _resolve_tools(
         self,
@@ -250,7 +367,16 @@ class LiteLLMAgent(AgentConnection):
         response_content: str | None = None
         all_tool_responses: list[Any] | None = None
 
-        if resolved_schemas:
+        if provider == "cyberian":
+            if resolved_schemas:
+                raise NotImplementedError(
+                    "Tool calling is not supported for Cyberian standard query path."
+                )
+            raw_response = self._query_cyberian(
+                message=message, system_message=system_message
+            )
+            response_content = str(raw_response.choices[0].message.content)
+        elif resolved_schemas:
             response_content, raw_response, all_tool_responses = self._run_tool_loop(
                 messages=messages,
                 tools=resolved_schemas,
@@ -262,7 +388,7 @@ class LiteLLMAgent(AgentConnection):
             from cellsem_llm_client.schema.adapters import AnthropicSchemaAdapter
 
             if isinstance(adapter, AnthropicSchemaAdapter):
-                raw_response = completion(
+                raw_response = self._completion(
                     model=self.model,
                     messages=messages,
                     tools=[adapter._create_tool_definition(schema_dict)],
@@ -283,7 +409,7 @@ class LiteLLMAgent(AgentConnection):
                 )
                 response_content = str(raw_response.choices[0].message.content)
         else:
-            raw_response = completion(
+            raw_response = self._completion(
                 model=self.model,
                 messages=messages,
                 max_tokens=self.max_tokens,
@@ -309,7 +435,18 @@ class LiteLLMAgent(AgentConnection):
             validated_model = validation_result.model_instance
 
         usage_metrics: UsageMetrics | None = None
-        if track_usage and raw_response is not None and hasattr(raw_response, "usage"):
+        if track_usage and provider == "cyberian":
+            usage_metrics = UsageMetrics(
+                input_tokens=0,
+                output_tokens=0,
+                provider="cyberian",
+                model=self.model,
+                timestamp=datetime.now(),
+                cost_source="estimated",
+            )
+        elif (
+            track_usage and raw_response is not None and hasattr(raw_response, "usage")
+        ):
             calc = cost_calculator
             if calc is None and auto_cost:
                 calc = self._build_default_calculator()
@@ -640,7 +777,7 @@ class LiteLLMAgent(AgentConnection):
         all_responses: list[Any] = []
 
         for _turn in range(max_turns):
-            response = completion(
+            response = self._completion(
                 model=self.model,
                 messages=[*working_messages],
                 tools=tools,
@@ -868,6 +1005,8 @@ class LiteLLMAgent(AgentConnection):
         """
         model_lower = model.lower()
 
+        if self._is_cyberian_model(model):
+            return "cyberian"
         if any(
             prefix in model_lower
             for prefix in ["gpt", "davinci", "curie", "babbage", "ada"]
@@ -920,3 +1059,22 @@ class AnthropicAgent(LiteLLMAgent):
             max_tokens: Maximum tokens for response
         """
         super().__init__(model=model, api_key=api_key, max_tokens=max_tokens)
+
+
+class CyberianAgent(LiteLLMAgent):
+    """Convenience class for Cyberian/Codex standard query execution."""
+
+    def __init__(
+        self,
+        model: str = "cyberian/codex",
+        api_key: str | None = None,
+        max_tokens: int = 1000,
+        completion_kwargs: dict[str, Any] | None = None,
+    ):
+        """Initialize Cyberian agent for query-based execution."""
+        super().__init__(
+            model=model,
+            api_key=api_key,
+            max_tokens=max_tokens,
+            completion_kwargs=completion_kwargs,
+        )

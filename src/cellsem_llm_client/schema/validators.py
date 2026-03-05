@@ -259,26 +259,93 @@ class SchemaValidator:
         error_details = error.errors()
 
         for error_detail in error_details:
-            if error_detail.get("type") == "missing":
-                # Add missing field with a default value
-                missing_field = (
-                    str(error_detail["loc"][0])
-                    if error_detail["loc"]
-                    else "missing_field"
-                )
-                if missing_field not in data:
-                    # Add with a reasonable default
-                    data[missing_field] = self._get_default_value_for_field(
-                        missing_field
-                    )
+            raw_path = error_detail.get("loc", ())
+            field_path = [part for part in raw_path if isinstance(part, (str, int))]
+            error_type = error_detail.get("type")
 
-            elif error_detail.get("type") == "string_type":
-                # Convert non-strings to strings
-                field_path = error_detail["loc"]
-                if field_path and field_path[0] in data:
-                    data[field_path[0]] = str(data[field_path[0]])
+            if error_type == "missing":
+                if field_path:
+                    default_field_name = str(field_path[-1])
+                    self._set_nested_value(
+                        data,
+                        field_path,
+                        self._get_default_value_for_field(default_field_name),
+                    )
+                continue
+
+            if not field_path:
+                continue
+
+            current_value = self._get_nested_value(data, field_path)
+            if current_value is None:
+                continue
+
+            if error_type == "string_type" and not isinstance(current_value, str):
+                self._set_nested_value(data, field_path, str(current_value))
+            elif error_type in ("int_type", "int_parsing"):
+                try:
+                    if isinstance(current_value, str):
+                        self._set_nested_value(data, field_path, int(current_value))
+                except ValueError:
+                    pass
+            elif error_type in ("float_type", "float_parsing"):
+                try:
+                    if isinstance(current_value, str):
+                        self._set_nested_value(data, field_path, float(current_value))
+                except ValueError:
+                    pass
+            elif error_type in ("model_type", "dict_type"):
+                if isinstance(current_value, str):
+                    stripped = current_value.strip()
+                    if stripped.startswith("{") or stripped.startswith("["):
+                        try:
+                            parsed = json.loads(stripped)
+                            self._set_nested_value(data, field_path, parsed)
+                        except json.JSONDecodeError:
+                            pass
 
         return json.dumps(data)
+
+    def _get_nested_value(self, data: Any, path: list[str | int]) -> Any:
+        """Read a nested value by path from dict/list structures."""
+        current = data
+        for part in path:
+            if isinstance(part, int):
+                if isinstance(current, list) and 0 <= part < len(current):
+                    current = current[part]
+                else:
+                    return None
+            else:
+                if isinstance(current, dict) and part in current:
+                    current = current[part]
+                else:
+                    return None
+        return current
+
+    def _set_nested_value(self, data: Any, path: list[str | int], value: Any) -> None:
+        """Set a nested value by path, creating missing dict keys when needed."""
+        if not path:
+            return
+
+        current = data
+        for part in path[:-1]:
+            if isinstance(part, int):
+                if not isinstance(current, list) or not (0 <= part < len(current)):
+                    return
+                current = current[part]
+            else:
+                if not isinstance(current, dict):
+                    return
+                if part not in current or current[part] is None:
+                    current[part] = {}
+                current = current[part]
+
+        final_part = path[-1]
+        if isinstance(final_part, int):
+            if isinstance(current, list) and 0 <= final_part < len(current):
+                current[final_part] = value
+        elif isinstance(current, dict):
+            current[final_part] = value
 
     def _get_default_value_for_field(self, field_name: str) -> Any:
         """Get a reasonable default value for a missing field.

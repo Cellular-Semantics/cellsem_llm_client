@@ -156,6 +156,7 @@ class SchemaManager:
 
         # If schema dict, generate model directly
         if isinstance(schema_input, dict):
+            self._validate_schema(schema_input)
             return self._generate_model_from_schema(schema_input, "DynamicModel")
 
         # If string, treat as schema name
@@ -215,6 +216,50 @@ class SchemaManager:
             # This is a warning case, not an error - empty objects are valid
             pass
 
+        # Validate field/type declarations recursively
+        self._validate_schema_types(schema_dict)
+
+    def _validate_schema_types(self, schema: dict[str, Any]) -> None:
+        """Recursively validate JSON schema type declarations."""
+        valid_types = {"string", "integer", "number", "boolean", "object", "array", "null"}
+
+        schema_type = schema.get("type")
+        if isinstance(schema_type, str):
+            if schema_type not in valid_types:
+                raise SchemaValidationError(f"Invalid JSON schema type: {schema_type}")
+        elif isinstance(schema_type, list):
+            for item in schema_type:
+                if isinstance(item, str) and item not in valid_types:
+                    raise SchemaValidationError(f"Invalid JSON schema type: {item}")
+
+        properties = schema.get("properties")
+        if isinstance(properties, dict):
+            for prop_schema in properties.values():
+                if isinstance(prop_schema, dict):
+                    self._validate_schema_types(prop_schema)
+
+        items = schema.get("items")
+        if isinstance(items, dict):
+            self._validate_schema_types(items)
+        elif isinstance(items, list):
+            for item_schema in items:
+                if isinstance(item_schema, dict):
+                    self._validate_schema_types(item_schema)
+
+        for key in ("anyOf", "oneOf", "allOf"):
+            variants = schema.get(key)
+            if isinstance(variants, list):
+                for variant in variants:
+                    if isinstance(variant, dict):
+                        self._validate_schema_types(variant)
+
+        for defs_key in ("$defs", "definitions"):
+            defs = schema.get(defs_key)
+            if isinstance(defs, dict):
+                for def_schema in defs.values():
+                    if isinstance(def_schema, dict):
+                        self._validate_schema_types(def_schema)
+
     def _generate_model_from_schema(
         self,
         schema_dict: dict[str, Any],
@@ -255,7 +300,9 @@ class SchemaManager:
             if field_name in required_fields:
                 field_definitions[field_name] = (field_type, ...)
             else:
-                field_definitions[field_name] = (field_type, None)
+                # Optional JSON schema fields commonly arrive as explicit `null`
+                # from providers; allow both omission and None values.
+                field_definitions[field_name] = (field_type | None, None)
 
         # Create the model
         return create_model(model_name, **field_definitions)  # type: ignore[misc]

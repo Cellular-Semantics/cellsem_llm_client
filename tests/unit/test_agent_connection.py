@@ -1,6 +1,8 @@
 """Unit tests for agent connection classes."""
 
 import json
+import sys
+import types
 import warnings
 from typing import Any
 from unittest.mock import Mock, patch
@@ -70,6 +72,12 @@ class TestLiteLLMAgent:
             LiteLLMAgent(model="gpt-3.5-turbo", api_key=None)
 
     @pytest.mark.unit
+    def test_litellm_agent_allows_keyless_cyberian(self) -> None:
+        """Cyberian/Codex models should not require API keys."""
+        agent = LiteLLMAgent(model="cyberian/codex", api_key=None)
+        assert agent.api_key is None
+
+    @pytest.mark.unit
     def test_litellm_agent_default_max_tokens(self) -> None:
         """Test default max_tokens setting."""
         agent = LiteLLMAgent(model="gpt-3.5-turbo", api_key="test-key")
@@ -129,6 +137,93 @@ class TestLiteLLMAgent:
         agent = LiteLLMAgent(model="gpt-3.5-turbo", api_key="test-key")
         with pytest.raises(Exception, match="API Error"):
             agent.query("Hello world")
+
+    @pytest.mark.unit
+    def test_litellm_agent_query_cyberian_external_server(self) -> None:
+        """Cyberian query should use agentapi client path when model is cyberian."""
+        fake_runner_instance = Mock()
+        fake_runner_cls = Mock(return_value=fake_runner_instance)
+        fake_send = Mock(return_value="CYBERIAN_OK")
+        fake_status = Mock(return_value={"status": "ready"})
+
+        cyberian_mod = types.ModuleType("cyberian")
+        cyberian_agent_client_mod = types.ModuleType("cyberian.agent_client")
+        cyberian_runner_mod = types.ModuleType("cyberian.runner")
+        cyberian_agent_client_mod.send_message_and_wait = fake_send
+        cyberian_agent_client_mod.get_agent_status = fake_status
+        cyberian_runner_mod.TaskRunner = fake_runner_cls
+
+        with (
+            patch(
+                "cellsem_llm_client.agents.agent_connection.importlib.util.find_spec",
+                return_value=object(),
+            ),
+            patch.dict(
+                sys.modules,
+                {
+                    "cyberian": cyberian_mod,
+                    "cyberian.agent_client": cyberian_agent_client_mod,
+                    "cyberian.runner": cyberian_runner_mod,
+                },
+            ),
+        ):
+            agent = LiteLLMAgent(
+                model="cyberian/codex",
+                api_key=None,
+                completion_kwargs={
+                    "provider_params": {"manage_server": False, "port": 3299}
+                },
+            )
+            response = agent.query("Hello world", system_message="Be concise.")
+
+        assert response == "CYBERIAN_OK"
+        fake_runner_instance._wait_for_server_ready.assert_not_called()
+        fake_runner_instance._start_server.assert_not_called()
+        fake_runner_instance._stop_server.assert_not_called()
+        fake_send.assert_called_once()
+
+    @pytest.mark.unit
+    def test_litellm_agent_query_with_tracking_cyberian(self) -> None:
+        """Cyberian tracking should return placeholder usage metrics."""
+        fake_runner_instance = Mock()
+        fake_runner_cls = Mock(return_value=fake_runner_instance)
+        fake_send = Mock(return_value="CYBERIAN_OK")
+        fake_status = Mock(return_value={"status": "ready"})
+
+        cyberian_mod = types.ModuleType("cyberian")
+        cyberian_agent_client_mod = types.ModuleType("cyberian.agent_client")
+        cyberian_runner_mod = types.ModuleType("cyberian.runner")
+        cyberian_agent_client_mod.send_message_and_wait = fake_send
+        cyberian_agent_client_mod.get_agent_status = fake_status
+        cyberian_runner_mod.TaskRunner = fake_runner_cls
+
+        with (
+            patch(
+                "cellsem_llm_client.agents.agent_connection.importlib.util.find_spec",
+                return_value=object(),
+            ),
+            patch.dict(
+                sys.modules,
+                {
+                    "cyberian": cyberian_mod,
+                    "cyberian.agent_client": cyberian_agent_client_mod,
+                    "cyberian.runner": cyberian_runner_mod,
+                },
+            ),
+        ):
+            agent = LiteLLMAgent(
+                model="cyberian/codex",
+                api_key=None,
+                completion_kwargs={
+                    "provider_params": {"manage_server": False, "port": 3299}
+                },
+            )
+            response, usage = agent.query_with_tracking("Hello world")
+
+        assert response == "CYBERIAN_OK"
+        assert usage.provider == "cyberian"
+        assert usage.input_tokens == 0
+        assert usage.output_tokens == 0
 
     @pytest.mark.unit
     @patch("cellsem_llm_client.agents.agent_connection.completion")

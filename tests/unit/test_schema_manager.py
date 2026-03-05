@@ -117,6 +117,27 @@ class TestSchemaManager:
         with pytest.raises(ValueError):  # Pydantic ValidationError
             user_model(age=25)  # Missing required email field
 
+    def test_optional_fields_accept_none_values(self) -> None:
+        """Optional fields should accept explicit null/None values."""
+        manager = SchemaManager()
+        schema_dict = {
+            "type": "object",
+            "properties": {
+                "email": {"type": "string"},
+                "age": {"type": "integer"},
+                "nickname": {"type": "string"},
+            },
+            "required": ["email"],
+        }
+
+        manager.register_schema("nullable_optional_user", schema_dict)
+        user_model = manager.get_pydantic_model("nullable_optional_user")
+
+        instance = user_model(email="test@example.com", age=None, nickname=None)
+        assert instance.email == "test@example.com"
+        assert instance.age is None
+        assert instance.nickname is None
+
     def test_list_available_schemas(self) -> None:
         """Test listing all available schemas."""
         with TemporaryDirectory() as temp_dir:
@@ -158,6 +179,19 @@ class TestSchemaManager:
 
         with pytest.raises(SchemaValidationError):
             manager.register_schema("invalid", invalid_schema)
+
+    def test_get_pydantic_model_rejects_invalid_nested_type(self) -> None:
+        """Invalid nested JSON schema type should fail model generation."""
+        manager = SchemaManager()
+        invalid_schema = {
+            "type": "object",
+            "properties": {
+                "field": {"type": "invalid-type"},
+            },
+        }
+
+        with pytest.raises(SchemaValidationError):
+            manager.get_pydantic_model(invalid_schema)
 
     def test_multiple_schema_directories(self) -> None:
         """Test SchemaManager with multiple schema directories."""

@@ -12,6 +12,7 @@ from cellsem_llm_client.agents.agent_connection import (
 )
 from cellsem_llm_client.utils.config import (
     create_anthropic_agent,
+    create_cyberian_agent,
     create_litellm_agent,
     create_openai_agent,
     get_available_providers,
@@ -161,6 +162,18 @@ class TestConfigurationUtils:
     @pytest.mark.unit
     @patch("cellsem_llm_client.utils.config.os.getenv")
     @patch("cellsem_llm_client.utils.config.load_dotenv")
+    def test_create_litellm_agent_cyberian_without_key(
+        self, mock_load_dotenv: Any, mock_getenv: Any
+    ) -> None:
+        """Cyberian/Codex model should be allowed without API key."""
+        mock_getenv.return_value = None
+        agent = create_litellm_agent(model="cyberian/codex")
+        assert isinstance(agent, LiteLLMAgent)
+        assert agent.api_key is None
+
+    @pytest.mark.unit
+    @patch("cellsem_llm_client.utils.config.os.getenv")
+    @patch("cellsem_llm_client.utils.config.load_dotenv")
     def test_create_litellm_agent_no_key_raises_error(
         self, mock_load_dotenv: Any, mock_getenv: Any
     ) -> None:
@@ -172,21 +185,24 @@ class TestConfigurationUtils:
 
     @pytest.mark.unit
     @patch("cellsem_llm_client.utils.config.os.getenv")
+    @patch("cellsem_llm_client.utils.config.shutil.which")
     @patch("cellsem_llm_client.utils.config.load_dotenv")
     def test_get_available_providers(
-        self, mock_load_dotenv: Any, mock_getenv: Any
+        self, mock_load_dotenv: Any, mock_which: Any, mock_getenv: Any
     ) -> None:
         """Test checking available providers."""
         mock_getenv.side_effect = lambda key: {
             "OPENAI_API_KEY": "openai-key",
             "ANTHROPIC_API_KEY": None,
         }.get(key)
+        mock_which.return_value = None
 
         providers = get_available_providers()
 
         assert providers == {
             "openai": True,
             "anthropic": False,
+            "cyberian": False,
         }
 
     @pytest.mark.unit
@@ -197,4 +213,24 @@ class TestConfigurationUtils:
         assert models == {
             "openai": "gpt-3.5-turbo",
             "anthropic": "claude-3-haiku-20240307",
+            "cyberian": "cyberian/codex",
         }
+
+    @pytest.mark.unit
+    def test_create_cyberian_agent(self) -> None:
+        """Test creating Cyberian query agent with provider params."""
+        agent = create_cyberian_agent(
+            model="cyberian/codex",
+            agent_type="codex",
+            port=3299,
+            manage_server=False,
+            max_iterations=2,
+        )
+
+        assert isinstance(agent, LiteLLMAgent)
+        assert agent.model == "cyberian/codex"
+        provider_params = agent.completion_kwargs["provider_params"]
+        assert provider_params["agent_type"] == "codex"
+        assert provider_params["port"] == 3299
+        assert provider_params["manage_server"] is False
+        assert provider_params["max_iterations"] == 2
