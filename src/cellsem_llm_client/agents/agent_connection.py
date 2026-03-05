@@ -259,7 +259,9 @@ class LiteLLMAgent(AgentConnection):
                 timeout=timeout,
             )
 
-        return _SimpleResponse(choices=[_SimpleChoice(message=_SimpleMessage(response_text))])
+        return _SimpleResponse(
+            choices=[_SimpleChoice(message=_SimpleMessage(response_text))]
+        )
 
     def _resolve_tools(
         self,
@@ -442,7 +444,9 @@ class LiteLLMAgent(AgentConnection):
                 timestamp=datetime.now(),
                 cost_source="estimated",
             )
-        elif track_usage and raw_response is not None and hasattr(raw_response, "usage"):
+        elif (
+            track_usage and raw_response is not None and hasattr(raw_response, "usage")
+        ):
             calc = cost_calculator
             if calc is None and auto_cost:
                 calc = self._build_default_calculator()
